@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* ── Local fonts ─────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_18pt-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_24pt-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter_28pt-Black.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Theme tokens ────────────────────────────────────────────── */
+
+@theme {
+  --color-cc-black: #111111;
+  --color-cc-white: #FAFAFA;
+  --color-cc-gray: #F0F0F0;
+  --color-cc-mid: #888888;
+  --color-cc-accent: #C0BABC;
+  --color-cc-dark: #222222;
+  --font-family-sans: 'Inter', 'Helvetica Neue', sans-serif;
+}
+
+/* ── Base styles ─────────────────────────────────────────────── */
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background-color: #FAFAFA;
+    color: #111111;
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings: Inter Black, uppercase, tight */
+  h1, h2, h3, h4, h5 {
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  p, li, blockquote {
+    font-weight: 300;
+    line-height: 1.65;
+  }
+
+  a { text-decoration: none; color: inherit; }
+
+  button, label {
+    font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  }
+}

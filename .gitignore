@@ -1,0 +1,11 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+client/dist/
+server/dist/
+*.db
+server/.env
+client/.env
+server/uploads/*
+!server/uploads/.gitkeep
+.claude/

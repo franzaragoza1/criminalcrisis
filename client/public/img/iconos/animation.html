@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animación Profundidad Anárquica</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #FAFAFA;
+            font-family: sans-serif;
+        }
+
+        #scene {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            perspective: 800px;
+            transform-style: preserve-3d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: filter 0ms;
+        }
+
+        #scene.inverted {
+            filter: invert(1);
+        }
+
+.icono-flotante {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            object-fit: contain;
+            will-change: transform;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="scene">
+    </div>
+
+    <script>
+        const BASE_IMAGES = [
+            'icono_enfadado1_criminalCrisis.png',
+            'icono_feliz1_criminalCrisis.png',
+            'icono_feliz2_criminalCrisis.png',
+            'icono_indiferente1_criminalCrisis.png',
+            'icono_triste1_criminalCrisis.png',
+            'icono_triste2_criminalCrisis.png'
+        ];
+
+        // Triple population for density
+        const imagenes = [...BASE_IMAGES, ...BASE_IMAGES, ...BASE_IMAGES];
+
+        const scene = document.getElementById('scene');
+        const particles = [];
+
+        let bounds = { w: window.innerWidth, h: window.innerHeight };
+        window.addEventListener('resize', () => {
+            bounds.w = window.innerWidth;
+            bounds.h = window.innerHeight;
+        });
+
+        class IconoFlotante {
+            constructor(src) {
+                this.el = document.createElement('img');
+                this.el.src = src;
+                this.el.className = 'icono-flotante';
+                this.el.onerror = () => { this.el.style.display = 'none'; };
+                scene.appendChild(this.el);
+
+                // Random size per icon for variety
+                const size = 140 + Math.random() * 200;
+                this.el.style.width  = size + 'px';
+                this.el.style.height = size + 'px';
+
+                this.reset();
+            }
+
+            reset() {
+                this.x    = (Math.random() - 0.5) * bounds.w * 1.2;
+                this.y    = (Math.random() - 0.5) * bounds.h * 1.2;
+                this.z    = (Math.random() - 0.5) * 1600;
+                this.rotZ = Math.random() * 360;
+
+                this.vx   = (Math.random() - 0.5) * 9;
+                this.vy   = (Math.random() - 0.5) * 9;
+                this.vz   = (Math.random() - 0.5) * 18;
+                this.vRot = (Math.random() - 0.5) * 4;
+            }
+
+            update() {
+                // Brownian turbulence — much more aggressive
+                this.vx += (Math.random() - 0.5) * 1.0;
+                this.vy += (Math.random() - 0.5) * 1.0;
+                this.vz += (Math.random() - 0.5) * 2.0;
+
+                // Random chaos burst (~0.4% chance per frame)
+                if (Math.random() < 0.004) {
+                    this.vx += (Math.random() - 0.5) * 35;
+                    this.vy += (Math.random() - 0.5) * 35;
+                    this.vz += (Math.random() - 0.5) * 60;
+                    this.vRot += (Math.random() - 0.5) * 15;
+                }
+
+                // Less friction → sustained speed
+                this.vx   *= 0.965;
+                this.vy   *= 0.965;
+                this.vz   *= 0.972;
+                this.vRot *= 0.99;
+
+                // Soft boundary steering
+                const mx = bounds.w  * 0.55;
+                const my = bounds.h  * 0.55;
+                const dz = 1300;
+
+                if (this.x < -mx)      this.vx += 1.2;
+                if (this.x >  mx)      this.vx -= 1.2;
+                if (this.y < -my)      this.vy += 1.2;
+                if (this.y >  my)      this.vy -= 1.2;
+                if (this.z < -dz)      this.vz += 3;
+                if (this.z >  dz - 300) this.vz -= 3;
+
+                this.x    += this.vx;
+                this.y    += this.vy;
+                this.z    += this.vz;
+                this.rotZ += this.vRot;
+
+                this.el.style.transform = `
+                    translate(-50%, -50%)
+                    translate3d(${this.x}px, ${this.y}px, ${this.z}px)
+                    rotateZ(${this.rotZ}deg)
+                `;
+            }
+        }
+
+        imagenes.forEach(src => particles.push(new IconoFlotante(src)));
+
+        // ── Flash / strobe effect ──────────────────────────────────────────
+        function doFlash(count = 1) {
+            if (count <= 0) return;
+
+            scene.classList.add('inverted');
+
+            const duration = 40 + Math.random() * 80;
+
+            setTimeout(() => {
+                scene.classList.remove('inverted');
+
+                if (count > 1) {
+                    // Gap between flashes in a burst
+                    setTimeout(() => doFlash(count - 1), 60 + Math.random() * 60);
+                }
+            }, duration);
+        }
+
+        function scheduleFlash() {
+            // 30% chance of a double/triple burst
+            const bursts = Math.random() < 0.3 ? (Math.random() < 0.5 ? 2 : 3) : 1;
+            doFlash(bursts);
+            // Next flash in 1–4 seconds
+            setTimeout(scheduleFlash, 1000 + Math.random() * 3000);
+        }
+
+        // Start flashing after a short delay
+        setTimeout(scheduleFlash, 1500);
+
+        // ── Animation loop ─────────────────────────────────────────────────
+        function animate() {
+            particles.forEach(p => p.update());
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
