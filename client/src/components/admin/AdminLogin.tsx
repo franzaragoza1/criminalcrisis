@@ -29,7 +29,7 @@ export default function AdminLogin({ onLogin }: Props) {
   return (
     <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-black text-[#111] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+        <h1 className="text-2xl font-black text-[#111] mb-2" style={{ fontFamily: "'ABCCamera', 'Helvetica Neue', sans-serif" }}>
           CRIMINAL CRISIS
         </h1>
         <p className="text-sm text-[#888] mb-8">Admin Panel</p>

@@ -627,7 +627,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     <div className="min-h-screen bg-[#FAFAFA] flex">
       <aside className="w-56 bg-[#111] text-white flex flex-col flex-shrink-0">
         <div className="p-6 border-b border-white/10">
-          <p className="font-black text-sm tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>CRIMINAL CRISIS</p>
+          <p className="font-black text-sm tracking-tight" style={{ fontFamily: "'ABCCamera', 'Helvetica Neue', sans-serif" }}>CRIMINAL CRISIS</p>
           <p className="text-xs text-white/40 mt-0.5">Admin</p>
         </div>
         <nav className="flex-1 p-4 space-y-1">
