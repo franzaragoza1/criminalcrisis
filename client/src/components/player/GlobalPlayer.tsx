@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ChevronUp, ChevronDown, ExternalLink,
@@ -19,12 +19,15 @@ function buildEmbedSrc(embedHtml: string, trackId?: number, autoplay = false): s
   return src;
 }
 
+function sendToIframe(iframe: HTMLIFrameElement | null, method: string) {
+  iframe?.contentWindow?.postMessage(JSON.stringify({ method }), '*');
+}
+
 export default function GlobalPlayer() {
   const { currentRelease, closePlayer } = usePlayer();
   const [expanded, setExpanded] = useState(false);
   const [activeTrackIdx, setActiveTrackIdx] = useState(-1);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [showIframe, setShowIframe] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const baseSrc = useMemo(() => {
@@ -32,57 +35,84 @@ export default function GlobalPlayer() {
     return buildEmbedSrc(currentRelease.bandcamp_embed);
   }, [currentRelease?.id]);
 
-  // When release changes: reset state and load base src
+  // New release: load with autoplay
   useEffect(() => {
     if (!baseSrc) return;
     setActiveTrackIdx(-1);
     setIsPlaying(true);
-    setShowIframe(true);
-    if (iframeRef.current) iframeRef.current.src = baseSrc;
+    if (iframeRef.current) {
+      iframeRef.current.src = baseSrc.replace(/\/$/, '') + '/autoplay=true/';
+    }
   }, [baseSrc]);
+
+  // Listen for Bandcamp player events to sync play state and active track
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (data?.event === 'play') setIsPlaying(true);
+        if (data?.event === 'pause') setIsPlaying(false);
+        if (data?.event === 'finish') setIsPlaying(false);
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   const tracklist = currentRelease?.tracklist ?? [];
 
-  function loadTrack(trackId: number | undefined, autoplay: boolean) {
+  const loadTrackById = useCallback((trackId: number, idx: number) => {
     if (!currentRelease?.bandcamp_embed) return;
-    const src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, autoplay);
-    setShowIframe(true);
+    setActiveTrackIdx(idx);
     setIsPlaying(true);
-    // Set src directly on the existing iframe element — preserves user interaction context
     if (iframeRef.current) {
-      iframeRef.current.src = src;
+      iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, true);
+    }
+  }, [currentRelease]);
+
+  function handleTrackClick(trackId: number | undefined, idx: number) {
+    if (trackId) {
+      loadTrackById(trackId, idx);
+    } else {
+      // No Bandcamp ID: use postMessage to jump by position (best effort)
+      sendToIframe(iframeRef.current, 'play');
+      setActiveTrackIdx(idx);
     }
   }
 
-  function handleTrackClick(trackId: number, idx: number) {
-    setActiveTrackIdx(idx);
-    loadTrack(trackId, true);
-  }
-
-  function goToTrack(idx: number) {
-    const clamped = Math.max(0, Math.min(tracklist.length - 1, idx));
-    const track = tracklist[clamped];
-    const trackId = typeof track === 'string' ? undefined : track.id;
-    setActiveTrackIdx(clamped);
-    loadTrack(trackId, true);
-  }
-
   function prevTrack() {
-    goToTrack(activeTrackIdx <= 0 ? tracklist.length - 1 : activeTrackIdx - 1);
+    if (tracklist.length === 0) return;
+    const newIdx = activeTrackIdx <= 0 ? tracklist.length - 1 : activeTrackIdx - 1;
+    const track = tracklist[newIdx];
+    const trackId = typeof track === 'string' ? undefined : track.id;
+    if (trackId) {
+      loadTrackById(trackId, newIdx);
+    } else {
+      sendToIframe(iframeRef.current, 'prev_track');
+      setActiveTrackIdx(newIdx);
+    }
   }
 
   function nextTrack() {
-    goToTrack(activeTrackIdx >= tracklist.length - 1 ? 0 : activeTrackIdx + 1);
+    if (tracklist.length === 0) return;
+    const newIdx = activeTrackIdx >= tracklist.length - 1 ? 0 : activeTrackIdx + 1;
+    const track = tracklist[newIdx];
+    const trackId = typeof track === 'string' ? undefined : track.id;
+    if (trackId) {
+      loadTrackById(trackId, newIdx);
+    } else {
+      sendToIframe(iframeRef.current, 'next_track');
+      setActiveTrackIdx(newIdx);
+    }
   }
 
   function togglePlay() {
     if (isPlaying) {
-      setShowIframe(false);
+      sendToIframe(iframeRef.current, 'pause');
       setIsPlaying(false);
     } else {
-      const track = activeTrackIdx >= 0 ? tracklist[activeTrackIdx] : undefined;
-      const trackId = track && typeof track !== 'string' ? track.id : undefined;
-      loadTrack(trackId, true);
+      sendToIframe(iframeRef.current, 'play');
+      setIsPlaying(true);
     }
   }
 
@@ -122,10 +152,8 @@ export default function GlobalPlayer() {
                         return (
                           <li
                             key={i}
-                            onClick={() => trackId && handleTrackClick(trackId, i)}
-                            className={`flex gap-3 items-baseline rounded px-2 py-1 transition-colors ${
-                              trackId ? 'cursor-pointer hover:bg-white/5 group' : 'cursor-default'
-                            } ${isActive ? 'bg-white/10' : ''}`}
+                            onClick={() => handleTrackClick(trackId, i)}
+                            className={`flex gap-3 items-baseline rounded px-2 py-1 transition-colors cursor-pointer hover:bg-white/5 group ${isActive ? 'bg-white/10' : ''}`}
                           >
                             <span className={`font-mono text-xs w-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-[#444] group-hover:text-[#666]'}`}>
                               {isActive ? '▶' : String(i + 1).padStart(2, '0')}
@@ -189,18 +217,13 @@ export default function GlobalPlayer() {
               )}
             </div>
 
-            {/* Bandcamp iframe — always mounted, src changed via ref */}
+            {/* Bandcamp iframe */}
             <div className="flex-1 min-w-0 overflow-hidden" style={{ height: '42px' }}>
               <iframe
                 ref={iframeRef}
                 src={baseSrc}
                 allow="autoplay"
-                style={{
-                  border: 0,
-                  width: '100%',
-                  height: '42px',
-                  display: showIframe ? 'block' : 'none',
-                }}
+                style={{ border: 0, width: '100%', height: '42px' }}
                 seamless
               />
             </div>
