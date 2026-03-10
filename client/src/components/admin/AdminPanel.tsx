@@ -30,22 +30,36 @@ function ConfirmDelete({ onConfirm, onCancel }: { onConfirm: () => void; onCance
   );
 }
 
-// Tracklist editor: one input per track, add/remove rows
-function TracklistEditor({ tracks, onChange }: { tracks: string[]; onChange: (t: string[]) => void }) {
-  const update = (i: number, val: string) => { const t = [...tracks]; t[i] = val; onChange(t); };
+type TrackRow = { name: string; id: string };
+
+// Tracklist editor: track name + optional Bandcamp track ID
+function TracklistEditor({ tracks, onChange }: { tracks: TrackRow[]; onChange: (t: TrackRow[]) => void }) {
+  const update = (i: number, field: keyof TrackRow, val: string) => {
+    const t = [...tracks]; t[i] = { ...t[i], [field]: val }; onChange(t);
+  };
   const remove = (i: number) => onChange(tracks.filter((_, idx) => idx !== i));
-  const add = () => onChange([...tracks, '']);
+  const add = () => onChange([...tracks, { name: '', id: '' }]);
 
   return (
     <div className="space-y-2">
+      <div className="flex gap-2 text-[10px] font-semibold tracking-wide uppercase text-[#C0BABC] px-8">
+        <span className="flex-1">Track name</span>
+        <span className="w-32">Bandcamp ID <span className="normal-case font-normal">(opcional)</span></span>
+      </div>
       {tracks.map((track, i) => (
         <div key={i} className="flex gap-2 items-center">
           <span className="text-xs text-[#C0BABC] font-mono w-6 text-right flex-shrink-0">{String(i + 1).padStart(2, '0')}</span>
           <input
-            value={track}
-            onChange={e => update(i, e.target.value)}
+            value={track.name}
+            onChange={e => update(i, 'name', e.target.value)}
             placeholder={`Track ${i + 1}`}
             className="flex-1 border border-[#E0E0E0] bg-white px-3 py-1.5 text-sm focus:outline-none focus:border-[#111] transition-colors"
+          />
+          <input
+            value={track.id}
+            onChange={e => update(i, 'id', e.target.value.replace(/\D/g, ''))}
+            placeholder="1234567890"
+            className="w-32 border border-[#E0E0E0] bg-white px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-[#111] transition-colors"
           />
           <button type="button" onClick={() => remove(i)} className="text-[#888] hover:text-red-500 transition-colors cursor-pointer flex-shrink-0">
             <X size={14} />
@@ -55,6 +69,7 @@ function TracklistEditor({ tracks, onChange }: { tracks: string[]; onChange: (t:
       <button type="button" onClick={add} className="flex items-center gap-1.5 text-xs text-[#888] hover:text-[#111] transition-colors cursor-pointer mt-1">
         <Plus size={12} /> Add track
       </button>
+      <p className="text-xs text-[#999] mt-1">El ID de Bandcamp está en el embed code del track: <span className="font-mono">/track=<strong>XXXXXXXXXX</strong>/</span></p>
     </div>
   );
 }
@@ -288,7 +303,7 @@ function ReleasesAdmin() {
   const [releaseDate, setReleaseDate] = useState('');
   const [bandcampEmbed, setBandcampEmbed] = useState('');
   const [links, setLinks] = useState<Record<string, string>>({});
-  const [tracklist, setTracklist] = useState<string[]>([]);
+  const [tracklist, setTracklist] = useState<TrackRow[]>([]);
   const [artistIds, setArtistIds] = useState<number[]>([]);
   const [artwork, setArtwork] = useState<File | null>(null);
 
@@ -299,7 +314,7 @@ function ReleasesAdmin() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setTitle(''); setReleaseDate(''); setBandcampEmbed(''); setLinks({}); setTracklist([]); setArtistIds([]); setArtwork(null); setEditing(null); setShowForm(false);
+    setTitle(''); setReleaseDate(''); setBandcampEmbed(''); setLinks({}); setTracklist([] as TrackRow[]); setArtistIds([]); setArtwork(null); setEditing(null); setShowForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -309,7 +324,10 @@ function ReleasesAdmin() {
     fd.append('release_date', releaseDate);
     fd.append('bandcamp_embed', bandcampEmbed);
     fd.append('links', JSON.stringify(links));
-    fd.append('tracklist', JSON.stringify(tracklist.filter(t => t.trim())));
+    const serializedTracklist = tracklist
+      .filter(t => t.name.trim())
+      .map(t => t.id ? { name: t.name, id: parseInt(t.id) } : t.name);
+    fd.append('tracklist', JSON.stringify(serializedTracklist));
     fd.append('artist_ids', JSON.stringify(artistIds));
     if (artwork) fd.append('artwork', artwork);
     try {
@@ -322,7 +340,7 @@ function ReleasesAdmin() {
   const startEdit = (r: Release) => {
     setEditing(r); setTitle(r.title); setReleaseDate(r.release_date || '');
     setBandcampEmbed(r.bandcamp_embed || ''); setLinks(r.links || {});
-    setTracklist(r.tracklist?.map(t => typeof t === 'string' ? t : t.name) || []); setArtistIds(r.artists?.map(a => a.id) || []);
+    setTracklist(r.tracklist?.map(t => typeof t === 'string' ? { name: t, id: '' } : { name: t.name, id: String(t.id) }) || []); setArtistIds(r.artists?.map(a => a.id) || []);
     setShowForm(true);
   };
 
