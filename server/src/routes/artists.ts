@@ -2,14 +2,10 @@ import { Router } from 'express';
 import { pool } from '../db/database.js';
 import { authMiddleware } from '../middleware/auth.js';
 import multer from 'multer';
+import { uploadToCloudinary } from '../services/cloudinary.js';
 
 const router = Router();
-
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Public
 router.get('/', async (req, res) => {
@@ -48,7 +44,7 @@ router.get('/:slug', async (req, res) => {
 router.post('/', authMiddleware, upload.single('photo'), async (req, res) => {
   const { name, bio, social_links } = req.body;
   const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  const photo_url = req.file ? `/uploads/${req.file.filename}` : null;
+  const photo_url = req.file ? await uploadToCloudinary(req.file.buffer, 'artists') : null;
   try {
     const result = await pool.query(
       'INSERT INTO artists (name, slug, bio, photo_url, social_links) VALUES ($1, $2, $3, $4, $5) RETURNING id',
@@ -66,7 +62,7 @@ router.put('/:id', authMiddleware, upload.single('photo'), async (req, res) => {
     if (existingResult.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
     const existing = existingResult.rows[0];
     const { name, bio, social_links } = req.body;
-    const photo_url = req.file ? `/uploads/${req.file.filename}` : existing.photo_url;
+    const photo_url = req.file ? await uploadToCloudinary(req.file.buffer, 'artists') : existing.photo_url;
     const slug = name ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : existing.slug;
     await pool.query(
       'UPDATE artists SET name=$1, slug=$2, bio=$3, photo_url=$4, social_links=$5 WHERE id=$6',

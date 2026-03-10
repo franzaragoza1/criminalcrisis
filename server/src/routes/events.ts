@@ -2,14 +2,10 @@ import { Router } from 'express';
 import { pool } from '../db/database.js';
 import { authMiddleware } from '../middleware/auth.js';
 import multer from 'multer';
+import { uploadToCloudinary } from '../services/cloudinary.js';
 
 const router = Router();
-
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Public
 router.get('/', async (req, res) => {
@@ -24,7 +20,7 @@ router.get('/', async (req, res) => {
 // Admin
 router.post('/', authMiddleware, upload.single('image'), async (req, res) => {
   const { name, event_date, venue, city, lineup, ticket_url, is_past } = req.body;
-  const image_url = req.file ? `/uploads/${req.file.filename}` : null;
+  const image_url = req.file ? await uploadToCloudinary(req.file.buffer, 'events') : null;
   try {
     const result = await pool.query(
       'INSERT INTO events (name, event_date, venue, city, lineup, ticket_url, image_url, is_past) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
@@ -42,7 +38,7 @@ router.put('/:id', authMiddleware, upload.single('image'), async (req, res) => {
     if (existingResult.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
     const existing = existingResult.rows[0];
     const { name, event_date, venue, city, lineup, ticket_url, is_past } = req.body;
-    const image_url = req.file ? `/uploads/${req.file.filename}` : existing.image_url;
+    const image_url = req.file ? await uploadToCloudinary(req.file.buffer, 'events') : existing.image_url;
     await pool.query(
       'UPDATE events SET name=$1, event_date=$2, venue=$3, city=$4, lineup=$5, ticket_url=$6, image_url=$7, is_past=$8 WHERE id=$9',
       [name || existing.name, event_date || existing.event_date, venue ?? existing.venue, city ?? existing.city, lineup || existing.lineup, ticket_url ?? existing.ticket_url, image_url, is_past !== undefined ? (is_past === '1' ? 1 : 0) : existing.is_past, req.params.id]

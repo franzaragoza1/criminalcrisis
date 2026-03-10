@@ -2,14 +2,10 @@ import { Router } from 'express';
 import { pool } from '../db/database.js';
 import { authMiddleware } from '../middleware/auth.js';
 import multer from 'multer';
+import { uploadToCloudinary } from '../services/cloudinary.js';
 
 const router = Router();
-
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', async (req, res) => {
   try {
@@ -33,7 +29,7 @@ router.put('/', authMiddleware, upload.single('image'), async (req, res) => {
     const existingResult = await pool.query('SELECT * FROM hero_content WHERE id = 1');
     const existing = existingResult.rows[0];
     const { tagline, featured_release_id } = req.body;
-    const image_url = req.file ? `/uploads/${req.file.filename}` : existing?.image_url;
+    const image_url = req.file ? await uploadToCloudinary(req.file.buffer, 'hero') : existing?.image_url;
     await pool.query(
       'INSERT INTO hero_content (id, image_url, tagline, featured_release_id) VALUES (1, $1, $2, $3) ON CONFLICT (id) DO UPDATE SET image_url=$1, tagline=$2, featured_release_id=$3',
       [image_url, tagline || existing?.tagline, featured_release_id || existing?.featured_release_id || null]

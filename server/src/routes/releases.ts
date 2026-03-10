@@ -2,14 +2,10 @@ import { Router } from 'express';
 import { pool } from '../db/database.js';
 import { authMiddleware } from '../middleware/auth.js';
 import multer from 'multer';
+import { uploadToCloudinary } from '../services/cloudinary.js';
 
 const router = Router();
-
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 async function enrichRelease(r: any) {
   const artistsResult = await pool.query(`
@@ -50,7 +46,7 @@ router.get('/:slug', async (req, res) => {
 router.post('/', authMiddleware, upload.single('artwork'), async (req, res) => {
   const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
   const slug = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  const artwork_url = req.file ? `/uploads/${req.file.filename}` : null;
+  const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'releases') : null;
   try {
     const result = await pool.query(
       'INSERT INTO releases (title, slug, release_date, artwork_url, bandcamp_embed, links, tracklist) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
@@ -78,7 +74,7 @@ router.put('/:id', authMiddleware, upload.single('artwork'), async (req, res) =>
     if (existingResult.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
     const existing = existingResult.rows[0];
     const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
-    const artwork_url = req.file ? `/uploads/${req.file.filename}` : existing.artwork_url;
+    const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'releases') : existing.artwork_url;
     const slug = title ? title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : existing.slug;
     await pool.query(
       'UPDATE releases SET title=$1, slug=$2, release_date=$3, artwork_url=$4, bandcamp_embed=$5, links=$6, tracklist=$7 WHERE id=$8',

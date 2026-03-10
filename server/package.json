@@ -11,6 +11,7 @@
   "dependencies": {
     "@types/stripe": "^8.0.416",
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.6.1",
     "pg": "^8.13.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
