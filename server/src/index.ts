@@ -19,21 +19,21 @@ initDb();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ 
+app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      process.env.CLIENT_URL,
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://localhost:5175',
-      'http://localhost:5176'
-    ];
-    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost:')) {
+    if (
+      !origin ||
+      origin.startsWith('http://localhost:') ||
+      origin.endsWith('.criminalcrisis.com') ||
+      origin === 'https://criminalcrisis.com' ||
+      origin.endsWith('.vercel.app') ||
+      origin === process.env.CLIENT_URL
+    ) {
       callback(null, true);
     } else {
       callback(new Error('No permitido por CORS'));
     }
-  } 
+  }
 }));
 // 1. WEBHOOK: Debe ir ANTES de express.json() para mantener el buffer 'raw' para Stripe
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
