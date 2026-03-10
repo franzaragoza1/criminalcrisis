@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db/database.js';
+import { pool } from '../db/database.js';
 import { authMiddleware } from '../middleware/auth.js';
 import multer from 'multer';
 
@@ -11,46 +11,59 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-function enrichRelease(r: any) {
-  const artists = db.prepare(`
+async function enrichRelease(r: any) {
+  const artistsResult = await pool.query(`
     SELECT a.* FROM artists a
     JOIN release_artists ra ON ra.artist_id = a.id
-    WHERE ra.release_id = ?
-  `).all(r.id);
+    WHERE ra.release_id = $1
+  `, [r.id]);
   return {
     ...r,
     links: JSON.parse(r.links || '{}'),
     tracklist: JSON.parse(r.tracklist || '[]'),
-    artists: artists.map((a: any) => ({ ...a, social_links: JSON.parse(a.social_links || '{}') })),
+    artists: artistsResult.rows.map(a => ({ ...a, social_links: JSON.parse(a.social_links || '{}') })),
   };
 }
 
 // Public
-router.get('/', (req, res) => {
-  const releases = db.prepare('SELECT * FROM releases ORDER BY release_date DESC').all();
-  res.json(releases.map(enrichRelease));
+router.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM releases ORDER BY release_date DESC');
+    const releases = await Promise.all(result.rows.map(enrichRelease));
+    res.json(releases);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.get('/:slug', (req, res) => {
-  const release = db.prepare('SELECT * FROM releases WHERE slug = ?').get(req.params.slug) as any;
-  if (!release) { res.status(404).json({ error: 'Not found' }); return; }
-  res.json(enrichRelease(release));
+router.get('/:slug', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM releases WHERE slug = $1', [req.params.slug]);
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json(await enrichRelease(result.rows[0]));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin
-router.post('/', authMiddleware, upload.single('artwork'), (req, res) => {
+router.post('/', authMiddleware, upload.single('artwork'), async (req, res) => {
   const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
   const slug = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const artwork_url = req.file ? `/uploads/${req.file.filename}` : null;
   try {
-    const result = db.prepare(
-      'INSERT INTO releases (title, slug, release_date, artwork_url, bandcamp_embed, links, tracklist) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(title, slug, release_date || null, artwork_url, bandcamp_embed || null, links || '{}', tracklist || '[]');
-    const releaseId = result.lastInsertRowid;
+    const result = await pool.query(
+      'INSERT INTO releases (title, slug, release_date, artwork_url, bandcamp_embed, links, tracklist) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [title, slug, release_date || null, artwork_url, bandcamp_embed || null, links || '{}', tracklist || '[]']
+    );
+    const releaseId = result.rows[0].id;
     if (artist_ids) {
       const ids = JSON.parse(artist_ids);
       for (const aid of ids) {
-        db.prepare('INSERT OR IGNORE INTO release_artists (release_id, artist_id) VALUES (?, ?)').run(releaseId, aid);
+        await pool.query(
+          'INSERT INTO release_artists (release_id, artist_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [releaseId, aid]
+        );
       }
     }
     res.json({ id: releaseId });
@@ -59,27 +72,41 @@ router.post('/', authMiddleware, upload.single('artwork'), (req, res) => {
   }
 });
 
-router.put('/:id', authMiddleware, upload.single('artwork'), (req, res) => {
-  const existing = db.prepare('SELECT * FROM releases WHERE id = ?').get(req.params.id) as any;
-  if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-  const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
-  const artwork_url = req.file ? `/uploads/${req.file.filename}` : existing.artwork_url;
-  const slug = title ? title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : existing.slug;
-  db.prepare('UPDATE releases SET title=?, slug=?, release_date=?, artwork_url=?, bandcamp_embed=?, links=?, tracklist=? WHERE id=?')
-    .run(title || existing.title, slug, release_date ?? existing.release_date, artwork_url, bandcamp_embed ?? existing.bandcamp_embed, links || existing.links, tracklist || existing.tracklist, req.params.id);
-  if (artist_ids) {
-    db.prepare('DELETE FROM release_artists WHERE release_id = ?').run(req.params.id);
-    const ids = JSON.parse(artist_ids);
-    for (const aid of ids) {
-      db.prepare('INSERT OR IGNORE INTO release_artists (release_id, artist_id) VALUES (?, ?)').run(req.params.id, aid);
+router.put('/:id', authMiddleware, upload.single('artwork'), async (req, res) => {
+  try {
+    const existingResult = await pool.query('SELECT * FROM releases WHERE id = $1', [req.params.id]);
+    if (existingResult.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    const existing = existingResult.rows[0];
+    const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
+    const artwork_url = req.file ? `/uploads/${req.file.filename}` : existing.artwork_url;
+    const slug = title ? title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : existing.slug;
+    await pool.query(
+      'UPDATE releases SET title=$1, slug=$2, release_date=$3, artwork_url=$4, bandcamp_embed=$5, links=$6, tracklist=$7 WHERE id=$8',
+      [title || existing.title, slug, release_date ?? existing.release_date, artwork_url, bandcamp_embed ?? existing.bandcamp_embed, links || existing.links, tracklist || existing.tracklist, req.params.id]
+    );
+    if (artist_ids) {
+      await pool.query('DELETE FROM release_artists WHERE release_id = $1', [req.params.id]);
+      const ids = JSON.parse(artist_ids);
+      for (const aid of ids) {
+        await pool.query(
+          'INSERT INTO release_artists (release_id, artist_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [req.params.id, aid]
+        );
+      }
     }
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
-  res.json({ ok: true });
 });
 
-router.delete('/:id', authMiddleware, (req, res) => {
-  db.prepare('DELETE FROM releases WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM releases WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 export default router;

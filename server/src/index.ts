@@ -14,8 +14,6 @@ import { createPaymentIntent, handleStripeWebhook } from './controllers/paymentC
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-initDb();
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -54,6 +52,9 @@ app.use('/api/contact', contactRoutes);
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => {
-  console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
-});
+(async () => {
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
+  });
+})();

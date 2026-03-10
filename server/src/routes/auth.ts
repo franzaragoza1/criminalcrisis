@@ -1,23 +1,28 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { db } from '../db/database.js';
+import { pool } from '../db/database.js';
 import { signToken } from '../middleware/auth.js';
 
 const router = Router();
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password required' });
     return;
   }
-  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username) as any;
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    res.status(401).json({ error: 'Invalid credentials' });
-    return;
+  try {
+    const result = await pool.query('SELECT * FROM admin_users WHERE username = $1', [username]);
+    const user = result.rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+    const token = signToken({ id: user.id, username: user.username });
+    res.json({ token, username: user.username });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
-  const token = signToken({ id: user.id, username: user.username });
-  res.json({ token, username: user.username });
 });
 
 export default router;
