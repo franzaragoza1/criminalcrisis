@@ -322,7 +322,7 @@ function ReleasesAdmin() {
   const startEdit = (r: Release) => {
     setEditing(r); setTitle(r.title); setReleaseDate(r.release_date || '');
     setBandcampEmbed(r.bandcamp_embed || ''); setLinks(r.links || {});
-    setTracklist(r.tracklist || []); setArtistIds(r.artists?.map(a => a.id) || []);
+    setTracklist(r.tracklist?.map(t => typeof t === 'string' ? t : t.name) || []); setArtistIds(r.artists?.map(a => a.id) || []);
     setShowForm(true);
   };
 

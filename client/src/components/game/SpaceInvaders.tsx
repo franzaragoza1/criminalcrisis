@@ -132,8 +132,7 @@ export default function SpaceInvaders({ onExit }: Props) {
         if (inv.x + INV_W / 2 > canvas.width - 8 || inv.x - INV_W / 2 < 8) wall = true;
       });
       if (wall) {
-        invaderDir *= -1;
-        invDir = invaderDir;
+        invDir *= -1;
         alive.forEach(inv => { inv.y += 24; });
         invSpeed = Math.min(invSpeed + 0.3, 8);
       }

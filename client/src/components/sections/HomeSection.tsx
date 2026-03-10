@@ -9,7 +9,7 @@ interface Props {
   hero: HeroContent | null;
 }
 
-export default function HomeSection({ hero }: Props) {
+export default function HomeSection({ hero: _hero }: Props) {
   const scrollTo = useScrollToSection();
   const [showPlay, setShowPlay] = useState(false);
   const [playing, setPlaying] = useState(false);
