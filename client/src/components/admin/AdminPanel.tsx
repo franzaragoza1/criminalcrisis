@@ -452,6 +452,13 @@ function ReleasesAdmin() {
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
+function isDirectVideo(url: string) {
+  return (
+    url.includes('cloudinary.com') ||
+    /\.(mp4|webm|ogg|mov)$/i.test(url)
+  );
+}
+
 function EventsAdmin() {
   const [events, setEvents] = useState<Event[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -464,6 +471,8 @@ function EventsAdmin() {
   const [lineup, setLineup] = useState<string[]>([]);
   const [ticketUrl, setTicketUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [videoMode, setVideoMode] = useState<'url' | 'file'>('url');
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isPast, setIsPast] = useState(false);
   const [image, setImage] = useState<File | null>(null);
 
@@ -471,7 +480,9 @@ function EventsAdmin() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setName(''); setEventDate(''); setVenue(''); setCity(''); setLineup([]); setTicketUrl(''); setVideoUrl(''); setIsPast(false); setImage(null); setEditing(null); setShowForm(false);
+    setName(''); setEventDate(''); setVenue(''); setCity(''); setLineup([]); setTicketUrl('');
+    setVideoUrl(''); setVideoMode('url'); setVideoFile(null); setIsPast(false); setImage(null);
+    setEditing(null); setShowForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -479,7 +490,12 @@ function EventsAdmin() {
     const fd = new FormData();
     fd.append('name', name); fd.append('event_date', eventDate); fd.append('venue', venue);
     fd.append('city', city); fd.append('lineup', JSON.stringify(lineup.filter(l => l.trim())));
-    fd.append('ticket_url', ticketUrl); fd.append('video_url', videoUrl); fd.append('is_past', isPast ? '1' : '0');
+    fd.append('ticket_url', ticketUrl); fd.append('is_past', isPast ? '1' : '0');
+    if (videoMode === 'file' && videoFile) {
+      fd.append('video', videoFile);
+    } else {
+      fd.append('video_url', videoUrl);
+    }
     if (image) fd.append('image', image);
     try {
       if (editing) await api.updateEvent(editing.id, fd);
@@ -491,7 +507,11 @@ function EventsAdmin() {
   const startEdit = (ev: Event) => {
     setEditing(ev); setName(ev.name); setEventDate(ev.event_date); setVenue(ev.venue || '');
     setCity(ev.city || ''); setLineup(ev.lineup || []); setTicketUrl(ev.ticket_url || '');
-    setVideoUrl(ev.video_url || ''); setIsPast(ev.is_past === 1); setShowForm(true);
+    const existingVideo = ev.video_url || '';
+    setVideoUrl(existingVideo);
+    setVideoMode(existingVideo && isDirectVideo(existingVideo) ? 'file' : 'url');
+    setVideoFile(null);
+    setIsPast(ev.is_past === 1); setShowForm(true);
   };
 
   return (
@@ -532,8 +552,51 @@ function EventsAdmin() {
           </div>
 
           <div>
-            <label className={LABEL_CLS}>Video URL <span className="font-normal normal-case text-[#C0BABC]">(YouTube o Vimeo — opcional)</span></label>
-            <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} type="url" className={INPUT_CLS} placeholder="https://www.youtube.com/watch?v=..." />
+            <label className={LABEL_CLS}>Vídeo <span className="font-normal normal-case text-[#C0BABC]">(opcional)</span></label>
+            {/* Toggle mode */}
+            <div className="flex gap-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setVideoMode('url')}
+                className={`px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                  videoMode === 'url' ? 'bg-[#111] text-white border-[#111]' : 'border-[#E0E0E0] text-[#555] hover:border-[#111]'
+                }`}
+              >
+                URL externa
+              </button>
+              <button
+                type="button"
+                onClick={() => setVideoMode('file')}
+                className={`px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                  videoMode === 'file' ? 'bg-[#111] text-white border-[#111]' : 'border-[#E0E0E0] text-[#555] hover:border-[#111]'
+                }`}
+              >
+                Subir archivo
+              </button>
+            </div>
+            {videoMode === 'url' ? (
+              <input
+                value={videoUrl}
+                onChange={e => setVideoUrl(e.target.value)}
+                type="url"
+                className={INPUT_CLS}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+            ) : (
+              <div className="space-y-1">
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={e => setVideoFile(e.target.files?.[0] || null)}
+                  className="text-sm text-[#888]"
+                />
+                {editing && videoUrl && isDirectVideo(videoUrl) && !videoFile && (
+                  <p className="text-xs text-[#888]">
+                    Vídeo actual guardado — sube uno nuevo para reemplazarlo.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div>

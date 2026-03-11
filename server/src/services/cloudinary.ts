@@ -19,4 +19,17 @@ export async function uploadToCloudinary(buffer: Buffer, folder: string): Promis
   });
 }
 
+export async function uploadVideoToCloudinary(buffer: Buffer, folder: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: `criminalcrisis/${folder}`, resource_type: 'video' },
+      (error, result) => {
+        if (error || !result) reject(error);
+        else resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
 export default cloudinary;

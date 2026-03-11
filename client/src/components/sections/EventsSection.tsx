@@ -24,6 +24,13 @@ function getEmbedUrl(url: string): string | null {
   return null;
 }
 
+function isDirectVideoUrl(url: string): boolean {
+  return (
+    url.includes('cloudinary.com') ||
+    /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)
+  );
+}
+
 interface Props {
   events: Event[];
 }
@@ -80,8 +87,20 @@ function EventCard({ event, index }: { event: Event; index: number }) {
           </p>
         )}
 
-        {/* Video embed */}
+        {/* Video embed or native player */}
         {event.video_url && (() => {
+          if (isDirectVideoUrl(event.video_url)) {
+            return (
+              <div className="mt-4 w-full" style={{ aspectRatio: '16/9' }}>
+                <video
+                  src={event.video_url}
+                  controls
+                  preload="metadata"
+                  className="w-full h-full object-cover bg-black"
+                />
+              </div>
+            );
+          }
           const embedUrl = getEmbedUrl(event.video_url);
           return embedUrl ? (
             <div className="mt-4 w-full" style={{ aspectRatio: '16/9' }}>
