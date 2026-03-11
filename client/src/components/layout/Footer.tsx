@@ -24,7 +24,7 @@ export default function Footer() {
 
         <div className="flex items-center gap-6">
           <a
-            href="https://www.instagram.com/criminalcrisisrec/"
+            href="https://www.instagram.com/criminalcrisis/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#888] hover:text-[#FAFAFA] transition-colors"
@@ -33,13 +33,21 @@ export default function Footer() {
             <Instagram size={20} />
           </a>
           <a
-            href="https://soundcloud.com/criminalcrisis"
+            href="https://soundcloud.com/criminal_crisis"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#888] hover:text-[#FAFAFA] transition-colors"
             aria-label="SoundCloud"
           >
             <Music size={20} />
+          </a>
+          <a
+            href="https://www.beatport.com/es/label/criminal-crisis/115183"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium tracking-[0.1em] uppercase text-[#888] hover:text-[#FAFAFA] transition-colors"
+          >
+            Beatport
           </a>
           <a
             href="https://criminalcrisis.bandcamp.com"

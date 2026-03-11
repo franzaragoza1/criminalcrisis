@@ -9,7 +9,8 @@ interface Props {
   hero: HeroContent | null;
 }
 
-export default function HomeSection({ hero: _hero }: Props) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function HomeSection(_props: Props) {
   const scrollTo = useScrollToSection();
   const [showPlay, setShowPlay] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -119,26 +120,35 @@ export default function HomeSection({ hero: _hero }: Props) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.5 }}
-            className="flex items-center justify-center gap-6 text-[#888]"
+            className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-[#888]"
           >
             <a
-              href="https://www.instagram.com/criminalcrisisrec/"
+              href="https://www.instagram.com/criminalcrisis/"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
             >
               <Instagram size={14} /> Instagram
             </a>
-            <span className="w-px h-4 bg-[#E0E0E0]" />
+            <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
             <a
-              href="https://soundcloud.com/criminalcrisis"
+              href="https://soundcloud.com/criminal_crisis"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
             >
               <Music size={14} /> SoundCloud
             </a>
-            <span className="w-px h-4 bg-[#E0E0E0]" />
+            <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
+            <a
+              href="https://www.beatport.com/es/label/criminal-crisis/115183"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
+            >
+              Beatport
+            </a>
+            <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
             <a
               href="https://criminalcrisis.bandcamp.com"
               target="_blank"

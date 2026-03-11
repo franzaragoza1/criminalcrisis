@@ -133,22 +133,31 @@ export default function ContactSection() {
               <p className="text-xs font-semibold tracking-widest uppercase text-[#888] mb-4">Follow Us</p>
               <div className="space-y-3">
                 <a
-                  href="https://www.instagram.com/criminalcrisisrec/"
+                  href="https://www.instagram.com/criminalcrisis/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 text-sm text-[#555] hover:text-[#111] transition-colors group"
                 >
                   <Instagram size={18} className="text-[#C0BABC] group-hover:text-[#111] transition-colors" />
-                  @criminalcrisisrec
+                  @criminalcrisis
                 </a>
                 <a
-                  href="https://soundcloud.com/criminalcrisis"
+                  href="https://soundcloud.com/criminal_crisis"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 text-sm text-[#555] hover:text-[#111] transition-colors group"
                 >
                   <Music size={18} className="text-[#C0BABC] group-hover:text-[#111] transition-colors" />
                   SoundCloud
+                </a>
+                <a
+                  href="https://www.beatport.com/es/label/criminal-crisis/115183"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 text-sm text-[#555] hover:text-[#111] transition-colors group"
+                >
+                  <span className="text-[#C0BABC] group-hover:text-[#111] transition-colors font-bold text-xs">BP</span>
+                  Beatport
                 </a>
                 <a
                   href="https://criminalcrisis.bandcamp.com"
@@ -165,7 +174,7 @@ export default function ContactSection() {
             <div>
               <p className="text-xs font-semibold tracking-widest uppercase text-[#888] mb-3">Bookings & Demos</p>
               <p className="text-sm text-[#555] leading-relaxed">
-                For bookings, demo submissions, or general enquiries, use the form or reach us directly via our social channels.
+                For bookings, demo submissions, or general enquiries, use the form, reach us directly at <a href="mailto:info@criminalcrisis.com" className="text-[#111] hover:underline font-medium">info@criminalcrisis.com</a>, or via our social channels.
               </p>
             </div>
           </motion.div>
