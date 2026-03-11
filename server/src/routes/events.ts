@@ -31,14 +31,13 @@ router.get('/', async (req, res) => {
 
 // Admin
 router.post('/', authMiddleware, uploadFields, async (req, res) => {
-  const { name, event_date, venue, city, lineup, ticket_url, is_past, video_url } = req.body;
-  const { imageFile, videoFile } = getFiles(req);
-  const image_url = imageFile ? await uploadToCloudinary(imageFile.buffer, 'events') : null;
-  // Video file takes priority over typed URL
-  const final_video_url = videoFile
-    ? await uploadVideoToCloudinary(videoFile.buffer, 'event-videos')
-    : (video_url || null);
   try {
+    const { name, event_date, venue, city, lineup, ticket_url, is_past, video_url } = req.body;
+    const { imageFile, videoFile } = getFiles(req);
+    const image_url = imageFile ? await uploadToCloudinary(imageFile.buffer, 'events') : null;
+    const final_video_url = videoFile
+      ? await uploadVideoToCloudinary(videoFile.buffer, 'event-videos')
+      : (video_url || null);
     const result = await pool.query(
       'INSERT INTO events (name, event_date, venue, city, lineup, ticket_url, image_url, is_past, video_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
       [name, event_date, venue || null, city || null, lineup || '[]', ticket_url || null, image_url, is_past === '1' ? 1 : 0, final_video_url]
@@ -57,7 +56,6 @@ router.put('/:id', authMiddleware, uploadFields, async (req, res) => {
     const { name, event_date, venue, city, lineup, ticket_url, is_past, video_url } = req.body;
     const { imageFile, videoFile } = getFiles(req);
     const image_url = imageFile ? await uploadToCloudinary(imageFile.buffer, 'events') : existing.image_url;
-    // Video file takes priority over typed URL; if neither provided, keep existing
     const final_video_url = videoFile
       ? await uploadVideoToCloudinary(videoFile.buffer, 'event-videos')
       : video_url !== undefined ? (video_url || null) : existing.video_url;
