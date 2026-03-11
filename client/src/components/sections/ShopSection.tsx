@@ -57,14 +57,14 @@ export default function ShopSection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="bg-[#111] border border-[#222] rounded-2xl overflow-hidden shadow-2xl"
+          className="bg-[#111] border border-[#222] overflow-hidden shadow-2xl"
         >
           <div className="flex flex-col md:flex-row">
             
             {/* Columna Izquierda: Imagen */}
             <div className="md:w-1/2 bg-[#1a1a1a] flex items-center justify-center p-8 md:p-16 relative">
-              <div className="absolute top-4 left-4 bg-white text-black text-xs font-black uppercase px-3 py-1 tracking-wider">
-                Nuevo
+              <div className="absolute top-4 left-4 bg-[#C8302B] text-white text-xs font-black uppercase px-3 py-1 tracking-wider">
+                NEW
               </div>
               <motion.img 
                 key={selectedVariant.image}

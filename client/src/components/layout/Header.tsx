@@ -42,7 +42,7 @@ export default function Header() {
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-[#FAFAFA]/95 backdrop-blur-sm shadow-sm' : 'bg-[#FAFAFA]'
+        scrolled ? 'bg-[#FAFAFA]/95 backdrop-blur-sm shadow-sm' : 'bg-transparent'
       }`}
       style={{ height: '72px' }}
     >
@@ -66,13 +66,16 @@ export default function Header() {
             <button
               key={item.id}
               onClick={() => handleNav(item.id)}
-              className={`text-xs font-medium tracking-[0.12em] uppercase transition-colors cursor-pointer ${
+              className={`relative text-xs font-medium tracking-[0.12em] uppercase transition-colors cursor-pointer ${
                 active === item.id
-                  ? 'text-[#111] border-b border-[#111] pb-0.5'
+                  ? 'text-[#111]'
                   : 'text-[#888] hover:text-[#111]'
               }`}
             >
               {item.label}
+              {active === item.id && (
+                <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#C8302B]" />
+              )}
             </button>
           ))}
         </nav>

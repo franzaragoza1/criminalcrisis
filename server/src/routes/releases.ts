@@ -44,13 +44,13 @@ router.get('/:slug', async (req, res) => {
 
 // Admin
 router.post('/', authMiddleware, upload.single('artwork'), async (req, res) => {
-  const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
+  const { title, release_date, bandcamp_embed, links, tracklist, artist_ids, catalog_number } = req.body;
   const slug = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'releases') : null;
   try {
     const result = await pool.query(
-      'INSERT INTO releases (title, slug, release_date, artwork_url, bandcamp_embed, links, tracklist) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [title, slug, release_date || null, artwork_url, bandcamp_embed || null, links || '{}', tracklist || '[]']
+      'INSERT INTO releases (title, slug, release_date, artwork_url, bandcamp_embed, links, tracklist, catalog_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+      [title, slug, release_date || null, artwork_url, bandcamp_embed || null, links || '{}', tracklist || '[]', catalog_number || null]
     );
     const releaseId = result.rows[0].id;
     if (artist_ids) {
@@ -73,12 +73,12 @@ router.put('/:id', authMiddleware, upload.single('artwork'), async (req, res) =>
     const existingResult = await pool.query('SELECT * FROM releases WHERE id = $1', [req.params.id]);
     if (existingResult.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
     const existing = existingResult.rows[0];
-    const { title, release_date, bandcamp_embed, links, tracklist, artist_ids } = req.body;
+    const { title, release_date, bandcamp_embed, links, tracklist, artist_ids, catalog_number } = req.body;
     const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'releases') : existing.artwork_url;
     const slug = title ? title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : existing.slug;
     await pool.query(
-      'UPDATE releases SET title=$1, slug=$2, release_date=$3, artwork_url=$4, bandcamp_embed=$5, links=$6, tracklist=$7 WHERE id=$8',
-      [title || existing.title, slug, release_date ?? existing.release_date, artwork_url, bandcamp_embed ?? existing.bandcamp_embed, links || existing.links, tracklist || existing.tracklist, req.params.id]
+      'UPDATE releases SET title=$1, slug=$2, release_date=$3, artwork_url=$4, bandcamp_embed=$5, links=$6, tracklist=$7, catalog_number=$8 WHERE id=$9',
+      [title || existing.title, slug, release_date ?? existing.release_date, artwork_url, bandcamp_embed ?? existing.bandcamp_embed, links || existing.links, tracklist || existing.tracklist, catalog_number !== undefined ? (catalog_number || null) : existing.catalog_number, req.params.id]
     );
     if (artist_ids) {
       await pool.query('DELETE FROM release_artists WHERE release_id = $1', [req.params.id]);

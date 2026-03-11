@@ -5,7 +5,7 @@ const { Pool } = pg;
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 
 export async function initDb() {
@@ -74,6 +74,10 @@ export async function initDb() {
       featured_release_id INTEGER REFERENCES releases(id)
     )
   `);
+
+  // Safe migrations — add new columns if they don't exist yet
+  await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);
 
   const heroResult = await pool.query('SELECT id FROM hero_content WHERE id = 1');
   if (heroResult.rows.length === 0) {

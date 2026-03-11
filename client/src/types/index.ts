@@ -18,6 +18,7 @@ export interface Release {
   links: Record<string, string>;
   tracklist: Array<{ name: string; id: number } | string>;
   artists: Artist[];
+  catalog_number?: string;
   created_at: string;
 }
 
@@ -30,6 +31,7 @@ export interface Event {
   lineup: string[];
   ticket_url?: string;
   image_url?: string;
+  video_url?: string;
   is_past: number;
   created_at: string;
 }

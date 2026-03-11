@@ -9,3 +9,4 @@ client/.env
 server/uploads/*
 !server/uploads/.gitkeep
 .claude/
+client/public/img/logo3d.mov

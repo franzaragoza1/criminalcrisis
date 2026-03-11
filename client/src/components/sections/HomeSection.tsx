@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, Instagram, Music } from 'lucide-react';
 import { useScrollToSection } from '../../hooks/useScrollToSection';
 import SpaceInvaders from '../game/SpaceInvaders';
 import type { HeroContent } from '../../types';
@@ -21,7 +20,6 @@ export default function HomeSection(_props: Props) {
     if (timerRef.current) clearTimeout(timerRef.current);
   };
 
-  // Only show PLAY when mouse stays still 1s inside the central 60% of the hero
   const onMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
     clearTimer();
     setShowPlay(false);
@@ -100,19 +98,20 @@ export default function HomeSection(_props: Props) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex items-center justify-center gap-4 mb-10"
+            className="flex items-center justify-center gap-6 mb-10"
           >
             <button
               onClick={() => scrollTo('music')}
-              className="bg-[#111] text-[#FAFAFA] px-8 py-3 text-xs font-medium tracking-[0.15em] uppercase hover:bg-[#333] transition-colors cursor-pointer"
+              className="bg-[#111] text-[#FAFAFA] px-10 py-4 text-xs font-medium tracking-[0.2em] uppercase hover:bg-[#C8302B] transition-colors cursor-pointer"
             >
               Listen Now
             </button>
             <button
               onClick={() => scrollTo('events')}
-              className="border border-[#111] text-[#111] px-8 py-3 text-xs font-medium tracking-[0.15em] uppercase hover:bg-[#111] hover:text-[#FAFAFA] transition-colors cursor-pointer"
+              className="text-[#111] text-xs font-medium tracking-[0.2em] uppercase cursor-pointer group relative"
             >
               Events
+              <span className="absolute -bottom-1 left-0 w-0 h-px bg-[#111] group-hover:w-full transition-all duration-300" />
             </button>
           </motion.div>
 
@@ -126,25 +125,25 @@ export default function HomeSection(_props: Props) {
               href="https://www.instagram.com/criminalcrisis/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
+              className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#C8302B] transition-colors"
             >
-              <Instagram size={14} /> Instagram
+              Instagram
             </a>
             <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
             <a
               href="https://soundcloud.com/criminal_crisis"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
+              className="flex items-center gap-2 text-xs tracking-[0.1em] uppercase hover:text-[#C8302B] transition-colors"
             >
-              <Music size={14} /> SoundCloud
+              SoundCloud
             </a>
             <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
             <a
               href="https://www.beatport.com/es/label/criminal-crisis/115183"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
+              className="text-xs tracking-[0.1em] uppercase hover:text-[#C8302B] transition-colors"
             >
               Beatport
             </a>
@@ -153,23 +152,34 @@ export default function HomeSection(_props: Props) {
               href="https://criminalcrisis.bandcamp.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs tracking-[0.1em] uppercase hover:text-[#111] transition-colors"
+              className="text-xs tracking-[0.1em] uppercase hover:text-[#C8302B] transition-colors"
             >
               Bandcamp
             </a>
           </motion.div>
         </div>
 
-        {/* Scroll indicator */}
-        <motion.button
+        {/* Typographic scroll cue */}
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.8 }}
-          onClick={() => scrollTo('music')}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[#888] hover:text-[#111] transition-colors cursor-pointer animate-bounce z-20"
+          className="absolute bottom-8 right-6 z-20"
         >
-          <ArrowDown size={18} />
-        </motion.button>
+          <button
+            onClick={() => scrollTo('music')}
+            className="text-[#C0BABC] hover:text-[#111] transition-colors cursor-pointer"
+            style={{
+              writingMode: 'vertical-rl',
+              fontSize: '9px',
+              letterSpacing: '0.25em',
+              textTransform: 'uppercase',
+              fontWeight: 500,
+            }}
+          >
+            Scroll
+          </button>
+        </motion.div>
       </section>
     </>
   );

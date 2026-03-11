@@ -19,9 +19,6 @@ function buildEmbedSrc(embedHtml: string, trackId?: number, autoplay = false): s
   return src;
 }
 
-function sendToIframe(iframe: HTMLIFrameElement | null, method: string) {
-  iframe?.contentWindow?.postMessage(JSON.stringify({ method }), '*');
-}
 
 export default function GlobalPlayer() {
   const { currentRelease, closePlayer } = usePlayer();
@@ -61,59 +58,37 @@ export default function GlobalPlayer() {
 
   const tracklist = currentRelease?.tracklist ?? [];
 
-  const loadTrackById = useCallback((trackId: number, idx: number) => {
-    if (!currentRelease?.bandcamp_embed) return;
+  // Load a specific track by reloading the iframe src (the only reliable way)
+  const loadTrack = useCallback((idx: number, autoplay = true) => {
+    if (!currentRelease?.bandcamp_embed || !iframeRef.current) return;
+    const track = tracklist[idx];
+    const trackId = typeof track === 'string' ? undefined : track.id;
     setActiveTrackIdx(idx);
-    setIsPlaying(true);
-    if (iframeRef.current) {
-      iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, true);
-    }
-  }, [currentRelease]);
-
-  function handleTrackClick(trackId: number | undefined, idx: number) {
-    if (trackId) {
-      loadTrackById(trackId, idx);
-    } else {
-      // No Bandcamp ID: use postMessage to jump by position (best effort)
-      sendToIframe(iframeRef.current, 'play');
-      setActiveTrackIdx(idx);
-    }
-  }
+    setIsPlaying(autoplay);
+    iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, autoplay);
+  }, [currentRelease, tracklist]);
 
   function prevTrack() {
     if (tracklist.length === 0) return;
-    const newIdx = activeTrackIdx <= 0 ? tracklist.length - 1 : activeTrackIdx - 1;
-    const track = tracklist[newIdx];
-    const trackId = typeof track === 'string' ? undefined : track.id;
-    if (trackId) {
-      loadTrackById(trackId, newIdx);
-    } else {
-      sendToIframe(iframeRef.current, 'prev_track');
-      setActiveTrackIdx(newIdx);
-    }
+    const cur = activeTrackIdx < 0 ? 0 : activeTrackIdx;
+    const newIdx = cur <= 0 ? tracklist.length - 1 : cur - 1;
+    loadTrack(newIdx, true);
   }
 
   function nextTrack() {
     if (tracklist.length === 0) return;
-    const newIdx = activeTrackIdx >= tracklist.length - 1 ? 0 : activeTrackIdx + 1;
-    const track = tracklist[newIdx];
-    const trackId = typeof track === 'string' ? undefined : track.id;
-    if (trackId) {
-      loadTrackById(trackId, newIdx);
-    } else {
-      sendToIframe(iframeRef.current, 'next_track');
-      setActiveTrackIdx(newIdx);
-    }
+    const cur = activeTrackIdx < 0 ? 0 : activeTrackIdx;
+    const newIdx = cur >= tracklist.length - 1 ? 0 : cur + 1;
+    loadTrack(newIdx, true);
   }
 
   function togglePlay() {
-    if (isPlaying) {
-      sendToIframe(iframeRef.current, 'pause');
-      setIsPlaying(false);
-    } else {
-      sendToIframe(iframeRef.current, 'play');
-      setIsPlaying(true);
-    }
+    if (!currentRelease?.bandcamp_embed || !iframeRef.current) return;
+    const newPlaying = !isPlaying;
+    setIsPlaying(newPlaying);
+    const track = activeTrackIdx >= 0 ? tracklist[activeTrackIdx] : undefined;
+    const trackId = track && typeof track !== 'string' ? track.id : undefined;
+    iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, newPlaying);
   }
 
   const btnClass = 'p-1.5 text-[#555] hover:text-white transition-colors cursor-pointer';
@@ -147,12 +122,11 @@ export default function GlobalPlayer() {
                     <ol className="space-y-0.5">
                       {tracklist.map((track, i) => {
                         const trackName = typeof track === 'string' ? track : track.name;
-                        const trackId = typeof track === 'string' ? undefined : track.id;
                         const isActive = i === activeTrackIdx;
                         return (
                           <li
                             key={i}
-                            onClick={() => handleTrackClick(trackId, i)}
+                            onClick={() => loadTrack(i)}
                             className={`flex gap-3 items-baseline rounded px-2 py-1 transition-colors cursor-pointer hover:bg-white/5 group ${isActive ? 'bg-white/10' : ''}`}
                           >
                             <span className={`font-mono text-xs w-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-[#444] group-hover:text-[#666]'}`}>
@@ -209,7 +183,12 @@ export default function GlobalPlayer() {
               <p className="text-[11px] text-[#666] truncate leading-tight">
                 {currentRelease.artists?.map((a) => a.name).join(', ')}
               </p>
-              <p className="text-sm font-semibold truncate leading-tight">{currentRelease.title}</p>
+              <div className="flex items-center gap-1.5">
+                {isPlaying && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C8302B] flex-shrink-0 animate-pulse-red" />
+                )}
+                <p className="text-sm font-semibold truncate leading-tight">{currentRelease.title}</p>
+              </div>
               {currentRelease.release_date && (
                 <p className="text-[10px] text-[#555] mt-0.5">
                   {new Date(currentRelease.release_date).getFullYear()}

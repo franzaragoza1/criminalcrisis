@@ -31,7 +31,18 @@
             filter: invert(1);
         }
 
-.icono-flotante {
+        #logo3d {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: clamp(280px, 38vw, 560px);
+            transform: translate(-50%, -50%) translate3d(0, 0, 0px);
+            pointer-events: none;
+            will-change: transform;
+            mix-blend-mode: multiply;
+        }
+
+        .icono-flotante {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -43,6 +54,7 @@
 </head>
 <body>
 
+    <video id="logo3d" src="../logo3dBlanco.mp4" autoplay loop muted playsinline></video>
     <div id="scene">
     </div>
 

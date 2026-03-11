@@ -301,6 +301,7 @@ function ReleasesAdmin() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [title, setTitle] = useState('');
   const [releaseDate, setReleaseDate] = useState('');
+  const [catalogNumber, setCatalogNumber] = useState('');
   const [bandcampEmbed, setBandcampEmbed] = useState('');
   const [links, setLinks] = useState<Record<string, string>>({});
   const [tracklist, setTracklist] = useState<TrackRow[]>([]);
@@ -314,7 +315,7 @@ function ReleasesAdmin() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setTitle(''); setReleaseDate(''); setBandcampEmbed(''); setLinks({}); setTracklist([] as TrackRow[]); setArtistIds([]); setArtwork(null); setEditing(null); setShowForm(false);
+    setTitle(''); setReleaseDate(''); setCatalogNumber(''); setBandcampEmbed(''); setLinks({}); setTracklist([] as TrackRow[]); setArtistIds([]); setArtwork(null); setEditing(null); setShowForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -322,6 +323,7 @@ function ReleasesAdmin() {
     const fd = new FormData();
     fd.append('title', title);
     fd.append('release_date', releaseDate);
+    fd.append('catalog_number', catalogNumber);
     fd.append('bandcamp_embed', bandcampEmbed);
     fd.append('links', JSON.stringify(links));
     const serializedTracklist = tracklist
@@ -339,6 +341,7 @@ function ReleasesAdmin() {
 
   const startEdit = (r: Release) => {
     setEditing(r); setTitle(r.title); setReleaseDate(r.release_date || '');
+    setCatalogNumber(r.catalog_number || '');
     setBandcampEmbed(r.bandcamp_embed || ''); setLinks(r.links || {});
     setTracklist(r.tracklist?.map(t => typeof t === 'string' ? { name: t, id: '' } : { name: t.name, id: String(t.id) }) || []); setArtistIds(r.artists?.map(a => a.id) || []);
     setShowForm(true);
@@ -355,14 +358,18 @@ function ReleasesAdmin() {
         <form onSubmit={handleSubmit} className="bg-[#F5F5F5] p-6 mb-6 space-y-5">
           <h3 className="font-semibold text-[#111]">{editing ? 'Edit Release' : 'New Release'}</h3>
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-1">
               <label className={LABEL_CLS}>Title *</label>
               <input value={title} onChange={e => setTitle(e.target.value)} required className={INPUT_CLS} placeholder="Release title" />
             </div>
             <div>
               <label className={LABEL_CLS}>Release Date</label>
               <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className={INPUT_CLS} />
+            </div>
+            <div>
+              <label className={LABEL_CLS}>Catalog Number</label>
+              <input value={catalogNumber} onChange={e => setCatalogNumber(e.target.value)} className={INPUT_CLS} placeholder="CRC001" />
             </div>
           </div>
 
@@ -456,6 +463,7 @@ function EventsAdmin() {
   const [city, setCity] = useState('');
   const [lineup, setLineup] = useState<string[]>([]);
   const [ticketUrl, setTicketUrl] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
   const [isPast, setIsPast] = useState(false);
   const [image, setImage] = useState<File | null>(null);
 
@@ -463,7 +471,7 @@ function EventsAdmin() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setName(''); setEventDate(''); setVenue(''); setCity(''); setLineup([]); setTicketUrl(''); setIsPast(false); setImage(null); setEditing(null); setShowForm(false);
+    setName(''); setEventDate(''); setVenue(''); setCity(''); setLineup([]); setTicketUrl(''); setVideoUrl(''); setIsPast(false); setImage(null); setEditing(null); setShowForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -471,7 +479,7 @@ function EventsAdmin() {
     const fd = new FormData();
     fd.append('name', name); fd.append('event_date', eventDate); fd.append('venue', venue);
     fd.append('city', city); fd.append('lineup', JSON.stringify(lineup.filter(l => l.trim())));
-    fd.append('ticket_url', ticketUrl); fd.append('is_past', isPast ? '1' : '0');
+    fd.append('ticket_url', ticketUrl); fd.append('video_url', videoUrl); fd.append('is_past', isPast ? '1' : '0');
     if (image) fd.append('image', image);
     try {
       if (editing) await api.updateEvent(editing.id, fd);
@@ -483,7 +491,7 @@ function EventsAdmin() {
   const startEdit = (ev: Event) => {
     setEditing(ev); setName(ev.name); setEventDate(ev.event_date); setVenue(ev.venue || '');
     setCity(ev.city || ''); setLineup(ev.lineup || []); setTicketUrl(ev.ticket_url || '');
-    setIsPast(ev.is_past === 1); setShowForm(true);
+    setVideoUrl(ev.video_url || ''); setIsPast(ev.is_past === 1); setShowForm(true);
   };
 
   return (
@@ -521,6 +529,11 @@ function EventsAdmin() {
           <div>
             <label className={LABEL_CLS}>Ticket URL</label>
             <input value={ticketUrl} onChange={e => setTicketUrl(e.target.value)} type="url" className={INPUT_CLS} placeholder="https://ra.co/events/..." />
+          </div>
+
+          <div>
+            <label className={LABEL_CLS}>Video URL <span className="font-normal normal-case text-[#C0BABC]">(YouTube o Vimeo — opcional)</span></label>
+            <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} type="url" className={INPUT_CLS} placeholder="https://www.youtube.com/watch?v=..." />
           </div>
 
           <div>
