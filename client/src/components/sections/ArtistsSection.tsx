@@ -64,7 +64,7 @@ function ArtistModal({ artist, onClose }: { artist: Artist; onClose: () => void 
               <img
                 src={artist.photo_url}
                 alt={artist.name}
-                className="w-24 h-24 object-cover flex-shrink-0 grayscale"
+                className="w-24 h-24 object-cover flex-shrink-0"
               />
             ) : (
               <div className="w-24 h-24 bg-[#F0F0F0] flex-shrink-0 flex items-center justify-center overflow-hidden">
@@ -139,7 +139,7 @@ export default function ArtistsSection({ artists }: Props) {
           ref={stripRef}
           drag="x"
           dragConstraints={stripRef}
-          className="flex gap-4 px-6 cursor-grab active:cursor-grabbing select-none overflow-x-auto pb-4"
+          className="flex gap-4 px-6 max-w-screen-xl mx-auto cursor-grab active:cursor-grabbing select-none overflow-x-auto md:justify-center pb-4"
           style={{ scrollbarWidth: 'none' }}
           whileTap={{ cursor: 'grabbing' }}
         >
@@ -157,7 +157,7 @@ export default function ArtistsSection({ artists }: Props) {
                     <img
                       src={artist.photo_url}
                       alt={artist.name}
-                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-500"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0]">

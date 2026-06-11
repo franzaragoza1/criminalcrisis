@@ -46,12 +46,6 @@ export const seedArtists: SeedArtist[] = [
     photo_url: null,
     social_links: { bandcamp: 'https://criminalcrisis.bandcamp.com' },
   },
-  {
-    name: 'Ghosting Corp.',
-    bio: null,
-    photo_url: null,
-    social_links: { bandcamp: 'https://criminalcrisis.bandcamp.com' },
-  },
 ];
 
 export const seedReleases: SeedRelease[] = [
@@ -177,7 +171,7 @@ export const seedReleases: SeedRelease[] = [
     artwork_url: 'https://f4.bcbits.com/img/a0393029904_5.jpg',
     albumId: 2574946375,
     url: 'https://criminalcrisis.bandcamp.com/album/often-mistaken',
-    artistNames: ['Ghosting Corp.'],
+    artistNames: [],
     tracklist: [
       { name: 'Often Mistaken', id: 4207320848 },
       { name: 'Barking at the Wrong Dream', id: 4029477205 },
