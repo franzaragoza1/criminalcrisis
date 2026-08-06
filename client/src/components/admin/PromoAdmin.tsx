@@ -332,10 +332,16 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
           {/* Tracks */}
           <div className="border border-[#E0E0E0] bg-white p-5">
             <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2"><Music size={14} /> Tracks</h3>
+            <p className="text-xs text-[#888] mb-2">
+              Upload the master once. The 128kbps stream and the 320 MP3 download are both derived
+              from it, so recipients can choose their format. Upload your own 320 only if you'd
+              rather control the encode yourself.
+            </p>
             <p className="text-xs text-[#888] mb-4">
-              Upload the master once — WAV or AIFF ideally. The 128kbps stream and the 320 MP3
-              download are both derived from it, so recipients can choose their format. Upload your
-              own 320 only if you'd rather control the encode yourself.
+              <strong className="text-[#C8302B]">Max 100MB per file</strong> on Cloudinary's free plan.
+              Export masters as <strong className="text-[#111]">FLAC</strong> — lossless, about half
+              the size of WAV, and read by Rekordbox, Serato and Traktor. A 24-bit/48kHz WAV only
+              fits up to roughly 6 minutes.
             </p>
 
             {stats?.perTrack.map((tr, i) => (

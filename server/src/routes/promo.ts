@@ -27,10 +27,40 @@ import { createDomain, listDomains, getDomain, verifyDomain, sendPromoEmail } fr
 import { renderPromoHtml, renderPromoText, type PromoEmailContent } from '../services/promoEmail.js';
 
 const router = Router();
+
+/**
+ * Cloudinary's free plan rejects any single file over 100MB — chunked uploading
+ * raises the request limit but not the plan cap. Matching the limit here means
+ * an oversized master fails immediately with a useful message instead of after
+ * a long upload that ends in a raw "413" from Cloudinary.
+ */
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 }, // masters can be large WAVs
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
+
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)}MB`;
+
+const TOO_BIG_MESSAGE =
+  `That file is over the ${mb(MAX_UPLOAD_BYTES)} limit on Cloudinary's free plan. ` +
+  `Export the master as FLAC — it's still lossless but roughly half the size of WAV, ` +
+  `and Rekordbox, Serato and Traktor all read it. A 16-bit/44.1kHz WAV also fits ` +
+  `for anything under about 9 minutes.`;
+
+/** Turns multer's size rejection into a 413 the admin UI can actually show. */
+function handleUpload(middleware: ReturnType<typeof upload.fields>): typeof middleware {
+  return ((req: any, res: any, next: any) =>
+    middleware(req, res, (err: any) => {
+      if (!err) return next();
+      if (err?.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({ error: TOO_BIG_MESSAGE });
+        return;
+      }
+      res.status(400).json({ error: err.message || 'Upload failed' });
+    })) as typeof middleware;
+}
 
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 80);
@@ -351,7 +381,7 @@ router.delete('/campaigns/:id', authMiddleware, async (req, res) => {
 router.post(
   '/campaigns/:id/tracks',
   authMiddleware,
-  upload.fields([{ name: 'master', maxCount: 1 }, { name: 'mp3', maxCount: 1 }]),
+  handleUpload(upload.fields([{ name: 'master', maxCount: 1 }, { name: 'mp3', maxCount: 1 }])),
   async (req, res) => {
     try {
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
@@ -383,7 +413,13 @@ router.post(
       );
       res.json({ id: rows[0].id, format: uploaded.format });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      // Cloudinary reports the plan cap as a bare "413" with no explanation.
+      const raw = String(e?.message || e?.error?.message || '');
+      if (raw.includes('413') || /file size too large|too large/i.test(raw)) {
+        res.status(413).json({ error: TOO_BIG_MESSAGE });
+        return;
+      }
+      res.status(400).json({ error: raw || 'Upload failed' });
     }
   }
 );
