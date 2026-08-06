@@ -11,7 +11,9 @@ import {
   uploadAudioToCloudinary,
   signedAudioStreamUrl,
   expiringAudioDownloadUrl,
+  signedAudioAttachmentUrl,
   deleteAudioFromCloudinary,
+  LOSSLESS_FORMATS,
 } from '../services/cloudinary.js';
 import {
   drainQueue,
@@ -261,7 +263,7 @@ router.get('/campaigns', authMiddleware, async (_req, res) => {
 
 router.post('/campaigns', authMiddleware, upload.single('artwork'), async (req, res) => {
   try {
-    const { title, subject, body_intro, embargo_date, release_id, download_enabled } = req.body;
+    const { title, subject, body_intro, release_date, release_id, download_enabled, require_feedback } = req.body;
     if (!title) { res.status(400).json({ error: 'Title required' }); return; }
 
     let slug = slugify(title) || 'promo';
@@ -271,12 +273,13 @@ router.post('/campaigns', authMiddleware, upload.single('artwork'), async (req, 
 
     const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'promo-artwork') : null;
 
+    const off = (v: unknown) => v === '0' || v === false || v === 'false';
     const { rows } = await pool.query(
-      `INSERT INTO promo_campaigns (title, slug, subject, body_intro, artwork_url, release_id, embargo_date, download_enabled)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, slug`,
+      `INSERT INTO promo_campaigns (title, slug, subject, body_intro, artwork_url, release_id, release_date, download_enabled, require_feedback)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, slug`,
       [title, slug, subject || null, body_intro || null, artwork_url,
-       release_id ? Number(release_id) : null, embargo_date || null,
-       download_enabled === '0' || download_enabled === false ? 0 : 1]
+       release_id ? Number(release_id) : null, release_date || null,
+       off(download_enabled) ? 0 : 1, off(require_feedback) ? 0 : 1]
     );
     res.json(rows[0]);
   } catch (e: any) {
@@ -289,24 +292,26 @@ router.put('/campaigns/:id', authMiddleware, upload.single('artwork'), async (re
     const existing = await pool.query('SELECT * FROM promo_campaigns WHERE id = $1', [req.params.id]);
     if (existing.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
     const prev = existing.rows[0];
-    const { title, subject, body_intro, embargo_date, release_id, download_enabled } = req.body;
+    const { title, subject, body_intro, release_date, release_id, download_enabled, require_feedback } = req.body;
     const artwork_url = req.file
       ? await uploadToCloudinary(req.file.buffer, 'promo-artwork')
       : prev.artwork_url;
+    const off = (v: unknown) => v === '0' || v === false || v === 'false';
 
     await pool.query(
       `UPDATE promo_campaigns
           SET title=$1, subject=$2, body_intro=$3, artwork_url=$4, release_id=$5,
-              embargo_date=$6, download_enabled=$7
-        WHERE id=$8`,
+              release_date=$6, download_enabled=$7, require_feedback=$8
+        WHERE id=$9`,
       [
         title || prev.title,
         subject ?? prev.subject,
         body_intro ?? prev.body_intro,
         artwork_url,
         release_id !== undefined && release_id !== '' ? Number(release_id) : prev.release_id,
-        embargo_date ?? prev.embargo_date,
-        download_enabled === undefined ? prev.download_enabled : (download_enabled === '0' || download_enabled === false ? 0 : 1),
+        release_date ?? prev.release_date,
+        download_enabled === undefined ? prev.download_enabled : (off(download_enabled) ? 0 : 1),
+        require_feedback === undefined ? prev.require_feedback : (off(require_feedback) ? 0 : 1),
         req.params.id,
       ]
     );
@@ -318,12 +323,14 @@ router.put('/campaigns/:id', authMiddleware, upload.single('artwork'), async (re
 
 router.delete('/campaigns/:id', authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT stream_public_id, download_public_id FROM promo_tracks WHERE campaign_id = $1', [req.params.id]);
+    const { rows } = await pool.query(
+      'SELECT stream_public_id, download_public_id, mp3_public_id FROM promo_tracks WHERE campaign_id = $1',
+      [req.params.id]
+    );
+    // Best-effort cleanup so unreleased masters don't linger in Cloudinary.
     for (const t of rows) {
-      // Best-effort cleanup so unreleased masters don't linger in Cloudinary.
-      if (t.stream_public_id) await deleteAudioFromCloudinary(t.stream_public_id).catch(() => {});
-      if (t.download_public_id && t.download_public_id !== t.stream_public_id) {
-        await deleteAudioFromCloudinary(t.download_public_id).catch(() => {});
+      for (const id of new Set([t.stream_public_id, t.download_public_id, t.mp3_public_id].filter(Boolean))) {
+        await deleteAudioFromCloudinary(id as string).catch(() => {});
       }
     }
     await pool.query('DELETE FROM promo_campaigns WHERE id = $1', [req.params.id]);
@@ -334,38 +341,47 @@ router.delete('/campaigns/:id', authMiddleware, async (req, res) => {
 });
 
 /** Uploads one track. `audio` becomes the 128k stream; `master` the download. */
+/**
+ * Uploads one track.
+ *
+ * `master` is the high-quality file (WAV/AIFF, or a 320 if that's all there is).
+ * Everything else is derived from it: the 128kbps stream, and the 320 MP3 unless
+ * an explicit `mp3` is supplied for people who'd rather control the encode.
+ */
 router.post(
   '/campaigns/:id/tracks',
   authMiddleware,
-  upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'master', maxCount: 1 }]),
+  upload.fields([{ name: 'master', maxCount: 1 }, { name: 'mp3', maxCount: 1 }]),
   async (req, res) => {
     try {
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
-      const audio = files?.audio?.[0];
       const master = files?.master?.[0];
-      if (!audio) { res.status(400).json({ error: 'An audio file is required' }); return; }
+      const mp3 = files?.mp3?.[0];
+      if (!master) { res.status(400).json({ error: 'A master audio file is required' }); return; }
 
       const { title, artist_name, position } = req.body;
-      const stream = await uploadAudioToCloudinary(audio.buffer, 'promo-audio', { transcodeTo128: true });
-      const download = master
-        ? await uploadAudioToCloudinary(master.buffer, 'promo-masters')
-        : stream;
+
+      // The eager 128k transcode happens here so the first listener isn't the
+      // one waiting for it.
+      const uploaded = await uploadAudioToCloudinary(master.buffer, 'promo-masters', { transcodeTo128: true });
+      const explicitMp3 = mp3 ? await uploadAudioToCloudinary(mp3.buffer, 'promo-mp3') : null;
 
       const { rows } = await pool.query(
-        `INSERT INTO promo_tracks (campaign_id, position, title, artist_name, stream_public_id, download_public_id, download_format, duration_seconds)
-              VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        `INSERT INTO promo_tracks (campaign_id, position, title, artist_name, stream_public_id, download_public_id, download_format, mp3_public_id, duration_seconds)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
         [
           req.params.id,
           position ? Number(position) : 0,
-          title || audio.originalname.replace(/\.[^.]+$/, ''),
+          title || master.originalname.replace(/\.[^.]+$/, ''),
           artist_name || null,
-          stream.publicId,
-          download.publicId,
-          download.format,
-          stream.durationSeconds,
+          uploaded.publicId,
+          uploaded.publicId,
+          uploaded.format,
+          explicitMp3?.publicId ?? null,
+          uploaded.durationSeconds,
         ]
       );
-      res.json({ id: rows[0].id });
+      res.json({ id: rows[0].id, format: uploaded.format });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -374,11 +390,13 @@ router.post(
 
 router.delete('/tracks/:id', authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT stream_public_id, download_public_id FROM promo_tracks WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query(
+      'SELECT stream_public_id, download_public_id, mp3_public_id FROM promo_tracks WHERE id = $1',
+      [req.params.id]
+    );
     if (rows[0]) {
-      if (rows[0].stream_public_id) await deleteAudioFromCloudinary(rows[0].stream_public_id).catch(() => {});
-      if (rows[0].download_public_id && rows[0].download_public_id !== rows[0].stream_public_id) {
-        await deleteAudioFromCloudinary(rows[0].download_public_id).catch(() => {});
+      for (const id of new Set([rows[0].stream_public_id, rows[0].download_public_id, rows[0].mp3_public_id].filter(Boolean))) {
+        await deleteAudioFromCloudinary(id as string).catch(() => {});
       }
     }
     await pool.query('DELETE FROM promo_tracks WHERE id = $1', [req.params.id]);
@@ -395,7 +413,9 @@ router.post('/campaigns/:id/recipients', authMiddleware, async (req, res) => {
       contact_ids?: number[]; roles?: string[]; tags?: string[];
     };
 
-    const where: string[] = [`status = 'active'`];
+    // Test contacts are created by the "send test" button; they must never be
+    // swept into a real send.
+    const where: string[] = [`status = 'active'`, `COALESCE(source, '') <> 'test'`];
     const params: unknown[] = [];
 
     if (Array.isArray(contact_ids) && contact_ids.length) {
@@ -469,21 +489,35 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
       'SELECT title FROM promo_tracks WHERE campaign_id = $1 ORDER BY position ASC, id ASC', [req.params.id]
     );
 
-    // A real recipient row keeps the preview link functional end to end.
-    const preview = await pool.query(
-      `SELECT r.access_token FROM promo_recipients r WHERE r.campaign_id = $1 LIMIT 1`, [req.params.id]
+    // Give the test address a real contact and recipient row. Borrowing another
+    // contact's token would work, but every play and download from the test
+    // would then be logged against that person's stats.
+    const contact = await pool.query(
+      `INSERT INTO promo_contacts (email, name, role, source, unsub_token)
+            VALUES ($1, 'Test', 'test', 'test', $2)
+       ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
+         RETURNING id, name, unsub_token`,
+      [to, newToken()]
     );
-    const token = preview.rows[0]?.access_token || 'preview';
+    const { id: contactId, name: contactName, unsub_token } = contact.rows[0];
+
+    const recipient = await pool.query(
+      `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status)
+            VALUES ($1, $2, $3, 'sent')
+       ON CONFLICT (campaign_id, contact_id) DO UPDATE SET sent_at = NOW()
+         RETURNING access_token`,
+      [req.params.id, contactId, newToken()]
+    );
 
     const content: PromoEmailContent = {
-      contactName: 'there',
+      contactName,
       campaignTitle: campaign.title,
       bodyIntro: campaign.body_intro,
       artworkUrl: campaign.artwork_url,
-      embargoDate: campaign.embargo_date,
+      releaseDate: campaign.release_date,
       trackTitles: tracks.map(t => t.title),
-      promoUrl: promoUrlFor(campaign.slug, token),
-      unsubscribeUrl: unsubscribeUrlFor('test-token'),
+      promoUrl: promoUrlFor(campaign.slug, recipient.rows[0].access_token),
+      unsubscribeUrl: unsubscribeUrlFor(unsub_token),
       downloadEnabled: campaign.download_enabled === 1,
     };
 
@@ -523,13 +557,27 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
 
     const { rows: feedback } = await pool.query(
       `SELECT f.rating, f.will_play, f.comment, f.created_at,
-              c.name, c.email, c.company, t.title AS track_title
+              c.name, c.email, c.company,
+              t.title AS track_title, fav.title AS favourite_track_title
          FROM promo_feedback f
          JOIN promo_recipients r ON r.id = f.recipient_id
          JOIN promo_contacts c   ON c.id = r.contact_id
     LEFT JOIN promo_tracks t     ON t.id = f.track_id
+    LEFT JOIN promo_tracks fav   ON fav.id = f.favourite_track_id
         WHERE r.campaign_id = $1
         ORDER BY f.created_at DESC`,
+      [req.params.id]
+    );
+
+    // Which track people picked as their favourite — the single most useful
+    // number for deciding the lead single.
+    const { rows: favourites } = await pool.query(
+      `SELECT t.id, t.title, COUNT(f.id)::int AS votes
+         FROM promo_tracks t
+    LEFT JOIN promo_feedback f ON f.favourite_track_id = t.id
+        WHERE t.campaign_id = $1
+     GROUP BY t.id, t.title
+     ORDER BY votes DESC, t.position ASC`,
       [req.params.id]
     );
 
@@ -559,7 +607,7 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
       feedback: feedback.length,
     };
 
-    res.json({ campaign: campaignRows[0], totals, recipients, feedback, perTrack });
+    res.json({ campaign: campaignRows[0], totals, recipients, feedback, perTrack, favourites });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -755,6 +803,35 @@ async function resolveRecipient(slug: unknown, token: unknown): Promise<Resolved
 const isExpired = (campaign: any) =>
   campaign.expires_at && new Date(campaign.expires_at).getTime() < Date.now();
 
+/**
+ * Downloads can be gated on leaving feedback. "Feedback" means the overall row
+ * with a rating — the whole point of the gate is to get the rating, so a blank
+ * row must not unlock it.
+ */
+async function hasGivenFeedback(recipientId: number): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM promo_feedback
+      WHERE recipient_id = $1 AND track_id IS NULL AND rating IS NOT NULL AND rating > 0
+      LIMIT 1`,
+    [recipientId]
+  );
+  return rows.length > 0;
+}
+
+/** Which download formats a track can actually offer. */
+function downloadFormatsFor(track: any): Array<{ id: string; label: string }> {
+  const formats: Array<{ id: string; label: string }> = [];
+  const masterFormat = String(track.download_format || '').toLowerCase();
+
+  if (track.mp3_public_id || masterFormat === 'mp3' || track.download_public_id) {
+    formats.push({ id: 'mp3', label: 'MP3 320' });
+  }
+  if (track.download_public_id && LOSSLESS_FORMATS.has(masterFormat)) {
+    formats.push({ id: 'wav', label: masterFormat.toUpperCase() });
+  }
+  return formats;
+}
+
 router.get('/:slug', promoLimiter, async (req, res) => {
   try {
     const resolved = await resolveRecipient(req.params.slug, req.query.k);
@@ -762,15 +839,20 @@ router.get('/:slug', promoLimiter, async (req, res) => {
     if (isExpired(resolved.campaign)) { res.status(410).json({ error: 'This promo link has expired.' }); return; }
 
     const { rows: tracks } = await pool.query(
-      `SELECT id, position, title, artist_name, stream_public_id, duration_seconds
+      `SELECT id, position, title, artist_name, stream_public_id, duration_seconds,
+              download_public_id, download_format, mp3_public_id
          FROM promo_tracks WHERE campaign_id = $1 ORDER BY position ASC, id ASC`,
       [resolved.campaign.id]
     );
 
     const { rows: feedback } = await pool.query(
-      `SELECT track_id, rating, will_play, comment FROM promo_feedback WHERE recipient_id = $1`,
+      `SELECT track_id, rating, will_play, comment, favourite_track_id
+         FROM promo_feedback WHERE recipient_id = $1`,
       [resolved.recipientId]
     );
+
+    const requiresFeedback = resolved.campaign.require_feedback === 1;
+    const downloadsUnlocked = !requiresFeedback || (await hasGivenFeedback(resolved.recipientId));
 
     await pool.query(
       `UPDATE promo_recipients SET first_visit_at = COALESCE(first_visit_at, NOW()) WHERE id = $1`,
@@ -787,10 +869,12 @@ router.get('/:slug', promoLimiter, async (req, res) => {
         slug: resolved.campaign.slug,
         body_intro: resolved.campaign.body_intro,
         artwork_url: resolved.campaign.artwork_url,
-        embargo_date: resolved.campaign.embargo_date,
+        release_date: resolved.campaign.release_date,
         download_enabled: resolved.campaign.download_enabled === 1,
+        require_feedback: requiresFeedback,
       },
       contactName: resolved.contactName,
+      downloadsUnlocked,
       tracks: tracks.map(t => ({
         id: t.id,
         title: t.title,
@@ -798,6 +882,7 @@ router.get('/:slug', promoLimiter, async (req, res) => {
         duration_seconds: t.duration_seconds,
         // Signed per request — never store a playable URL anywhere.
         stream_url: t.stream_public_id ? signedAudioStreamUrl(t.stream_public_id) : null,
+        download_formats: downloadFormatsFor(t),
       })),
       feedback,
     });
@@ -832,18 +917,49 @@ router.get('/:slug/download/:trackId', promoLimiter, async (req, res) => {
     if (isExpired(resolved.campaign)) { res.status(410).json({ error: 'This promo link has expired.' }); return; }
     if (resolved.campaign.download_enabled !== 1) { res.status(403).json({ error: 'Downloads are disabled for this promo.' }); return; }
 
+    // Enforced here, not just in the UI — otherwise the URL is a way around it.
+    if (resolved.campaign.require_feedback === 1 && !(await hasGivenFeedback(resolved.recipientId))) {
+      res.status(403).json({ error: 'Please rate the release before downloading.' });
+      return;
+    }
+
     const { rows } = await pool.query(
-      `SELECT download_public_id, download_format FROM promo_tracks WHERE id = $1 AND campaign_id = $2`,
+      `SELECT title, download_public_id, download_format, mp3_public_id
+         FROM promo_tracks WHERE id = $1 AND campaign_id = $2`,
       [req.params.trackId, resolved.campaign.id]
     );
     if (rows.length === 0 || !rows[0].download_public_id) { res.status(404).json({ error: 'Track not found' }); return; }
 
+    const track = rows[0];
+    const masterFormat = String(track.download_format || '').toLowerCase();
+    const wants = req.query.format === 'wav' ? 'wav' : 'mp3';
+
+    if (wants === 'wav' && !LOSSLESS_FORMATS.has(masterFormat)) {
+      res.status(404).json({ error: 'No lossless file available for this track.' });
+      return;
+    }
+
     await pool.query(
-      `INSERT INTO promo_events (recipient_id, track_id, type) VALUES ($1, $2, 'download')`,
-      [resolved.recipientId, req.params.trackId]
+      `INSERT INTO promo_events (recipient_id, track_id, type, meta) VALUES ($1, $2, 'download', $3)`,
+      [resolved.recipientId, req.params.trackId, JSON.stringify({ format: wants })]
     );
 
-    res.redirect(302, expiringAudioDownloadUrl(rows[0].download_public_id, rows[0].download_format || 'mp3'));
+    // Lossless goes out untouched via a genuinely expiring link. The 320 is a
+    // derivative, which private_download_url can't produce, so it uses a signed
+    // attachment URL instead.
+    if (wants === 'wav') {
+      res.redirect(302, expiringAudioDownloadUrl(track.download_public_id, masterFormat));
+      return;
+    }
+    if (track.mp3_public_id) {
+      res.redirect(302, expiringAudioDownloadUrl(track.mp3_public_id, 'mp3'));
+      return;
+    }
+    if (masterFormat === 'mp3') {
+      res.redirect(302, expiringAudioDownloadUrl(track.download_public_id, 'mp3'));
+      return;
+    }
+    res.redirect(302, signedAudioAttachmentUrl(track.download_public_id, { format: 'mp3', bitRate: '320k' }));
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -855,20 +971,23 @@ router.post('/:slug/feedback', promoLimiter, async (req, res) => {
     if (!resolved) { res.status(404).json({ error: 'Invalid link' }); return; }
 
     const trackId = req.body?.track_id ? Number(req.body.track_id) : null;
-    const rating = req.body?.rating != null ? Math.max(1, Math.min(5, Number(req.body.rating))) : null;
+    // 0 means "no rating"; it must survive rather than be clamped up to 1.
+    const rating = req.body?.rating != null ? Math.max(0, Math.min(5, Number(req.body.rating))) : null;
     const willPlay = ['yes', 'maybe', 'no'].includes(req.body?.will_play) ? req.body.will_play : null;
     const comment = req.body?.comment ? String(req.body.comment).slice(0, 2000) : null;
+    const favourite = req.body?.favourite_track_id ? Number(req.body.favourite_track_id) : null;
 
     // Two partial unique indexes back this table (track-level and overall), so
     // the conflict target has to be spelled out per case.
     if (trackId === null) {
       await pool.query(
-        `INSERT INTO promo_feedback (recipient_id, track_id, rating, will_play, comment)
-              VALUES ($1, NULL, $2, $3, $4)
+        `INSERT INTO promo_feedback (recipient_id, track_id, rating, will_play, comment, favourite_track_id)
+              VALUES ($1, NULL, $2, $3, $4, $5)
          ON CONFLICT (recipient_id) WHERE track_id IS NULL
          DO UPDATE SET rating = EXCLUDED.rating, will_play = EXCLUDED.will_play,
-                       comment = EXCLUDED.comment, updated_at = NOW()`,
-        [resolved.recipientId, rating, willPlay, comment]
+                       comment = EXCLUDED.comment, favourite_track_id = EXCLUDED.favourite_track_id,
+                       updated_at = NOW()`,
+        [resolved.recipientId, rating, willPlay, comment, favourite]
       );
     } else {
       await pool.query(
@@ -881,7 +1000,8 @@ router.post('/:slug/feedback', promoLimiter, async (req, res) => {
       );
     }
 
-    res.json({ ok: true });
+    // Tells the page whether downloads just unlocked, without a reload.
+    res.json({ ok: true, downloadsUnlocked: await hasGivenFeedback(resolved.recipientId) });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

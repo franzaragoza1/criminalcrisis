@@ -73,8 +73,8 @@ export const api = {
       body: JSON.stringify(body),
       keepalive: true,
     }).catch(() => undefined),
-  promoDownloadUrl: (slug: string, trackId: number, k: string) =>
-    `${BASE}/promo/${slug}/download/${trackId}?k=${encodeURIComponent(k)}`,
+  promoDownloadUrl: (slug: string, trackId: number, k: string, format: 'mp3' | 'wav' = 'mp3') =>
+    `${BASE}/promo/${slug}/download/${trackId}?k=${encodeURIComponent(k)}&format=${format}`,
   sendPromoFeedback: (slug: string, body: object) =>
     request(`/promo/${slug}/feedback`, {
       method: 'POST',

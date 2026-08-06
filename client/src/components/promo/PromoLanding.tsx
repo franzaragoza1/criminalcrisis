@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Download, ChevronDown, Check, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, Download, ChevronDown, Check, SkipBack, SkipForward, Lock } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoView, PromoFeedbackEntry, WillPlay } from '../../types';
 import PromoFeedbackForm from './PromoFeedbackForm';
@@ -22,8 +22,13 @@ export default function PromoLanding() {
   const error = !token ? 'This link is missing its access key.' : fetchError;
   const [feedback, setFeedback] = useState<Record<string, PromoFeedbackEntry>>({});
   const [openFeedback, setOpenFeedback] = useState<number | 'overall' | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [openDownload, setOpenDownload] = useState<number | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const overallRef = useRef<HTMLDivElement | null>(null);
+  const scrollToOverall = () =>
+    overallRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -52,6 +57,7 @@ export default function PromoLanding() {
         const view = (await api.getPromo(slug, token)) as PromoView;
         if (!alive) return;
         setData(view);
+        setUnlocked(view.downloadsUnlocked);
         const seeded: Record<string, PromoFeedbackEntry> = {};
         for (const f of view.feedback) seeded[f.track_id === null ? 'overall' : String(f.track_id)] = f;
         setFeedback(seeded);
@@ -145,12 +151,19 @@ export default function PromoLanding() {
     audio.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
   };
 
-  const saveFeedback = async (trackId: number | null, body: { rating?: number; will_play?: WillPlay; comment?: string }) => {
-    await api.sendPromoFeedback(slug, { k: token, track_id: trackId, ...body });
+  const saveFeedback = async (
+    trackId: number | null,
+    body: { rating?: number; will_play?: WillPlay; comment?: string; favourite_track_id?: number }
+  ) => {
+    const res = (await api.sendPromoFeedback(slug, { k: token, track_id: trackId, ...body })) as {
+      downloadsUnlocked?: boolean;
+    };
     setFeedback(prev => ({
       ...prev,
       [trackId === null ? 'overall' : String(trackId)]: { track_id: trackId, ...body },
     }));
+    // Unlock without a reload the moment the rating lands.
+    if (res?.downloadsUnlocked !== undefined) setUnlocked(res.downloadsUnlocked);
   };
 
   // --- states -------------------------------------------------------------
@@ -186,11 +199,12 @@ export default function PromoLanding() {
     <div className="min-h-screen bg-[#FAFAFA] pb-32">
       <audio ref={audioRef} preload="none" />
 
-      {/* Embargo ticker — the one piece of chrome that earns a full-bleed red bar */}
-      {campaign.embargo_date && (
+      {/* Release ticker — the one piece of chrome that earns a full-bleed red bar.
+          Play it out, just don't upload it: that's the actual ask for club promos. */}
+      {campaign.release_date && (
         <div className="bg-[#C8302B] text-[#FAFAFA] py-2.5 px-6 overflow-hidden">
           <p className="text-[10px] font-semibold tracking-[0.25em] uppercase text-center">
-            Embargo until {campaign.embargo_date} · Not for broadcast or upload before this date
+            Out {campaign.release_date} · Please don&apos;t upload or share the files before release
           </p>
         </div>
       )}
@@ -236,10 +250,10 @@ export default function PromoLanding() {
                 <dt className="tracking-[0.18em] uppercase text-[#999]">Format</dt>
                 <dd className="font-mono text-[#111]">{campaign.download_enabled ? 'Stream + DL' : 'Stream'}</dd>
               </div>
-              {campaign.embargo_date && (
+              {campaign.release_date && (
                 <div className="flex justify-between border-b border-[#E5E5E5] pb-1.5">
-                  <dt className="tracking-[0.18em] uppercase text-[#999]">Embargo</dt>
-                  <dd className="font-mono text-[#C8302B]">{campaign.embargo_date}</dd>
+                  <dt className="tracking-[0.18em] uppercase text-[#999]">Out</dt>
+                  <dd className="font-mono text-[#C8302B]">{campaign.release_date}</dd>
                 </div>
               )}
             </dl>
@@ -271,9 +285,19 @@ export default function PromoLanding() {
             </motion.div>
 
             {/* Tracklist */}
-            <p className="text-[10px] font-semibold tracking-[0.3em] uppercase text-[#C0BABC] mb-4">
-              The music
-            </p>
+            <div className="flex items-baseline justify-between gap-4 mb-4">
+              <p className="text-[10px] font-semibold tracking-[0.3em] uppercase text-[#C0BABC]">
+                The music
+              </p>
+              {campaign.download_enabled && campaign.require_feedback && !unlocked && (
+                <button
+                  onClick={() => { setOpenFeedback('overall'); scrollToOverall(); }}
+                  className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.15em] uppercase text-[#C8302B] hover:underline cursor-pointer"
+                >
+                  <Lock size={11} /> Rate to unlock downloads
+                </button>
+              )}
+            </div>
             <div className="border-t-2 border-[#111]">
               {tracks.map((track, i) => {
                 const active = track.id === currentId;
@@ -334,19 +358,51 @@ export default function PromoLanding() {
                         <ChevronDown size={13} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                       </button>
 
-                      {campaign.download_enabled && (
-                        <a
-                          href={api.promoDownloadUrl(slug, track.id, token)}
-                          onClick={() => beacon('click', track.id)}
-                          aria-label={`Download ${track.title}`}
-                          className={`shrink-0 w-9 h-9 flex items-center justify-center border transition-colors ${
-                            active
-                              ? 'border-[#444] text-[#FAFAFA] hover:bg-[#FAFAFA] hover:text-[#111]'
-                              : 'border-[#DDD] text-[#111] hover:border-[#111] hover:bg-[#111] hover:text-[#FAFAFA]'
-                          }`}
-                        >
-                          <Download size={14} />
-                        </a>
+                      {campaign.download_enabled && track.download_formats.length > 0 && (
+                        <div className="relative shrink-0">
+                          <button
+                            onClick={() => {
+                              if (!unlocked) { setOpenFeedback('overall'); scrollToOverall(); return; }
+                              setOpenDownload(openDownload === track.id ? null : track.id);
+                            }}
+                            aria-label={unlocked ? `Download ${track.title}` : 'Rate the release to unlock downloads'}
+                            title={unlocked ? undefined : 'Rate the release to unlock downloads'}
+                            className={`w-9 h-9 flex items-center justify-center border transition-colors cursor-pointer ${
+                              !unlocked
+                                ? active
+                                  ? 'border-[#3A3A3A] text-[#666]'
+                                  : 'border-[#E5E5E5] text-[#CCC] hover:border-[#C8302B] hover:text-[#C8302B]'
+                                : active
+                                  ? 'border-[#444] text-[#FAFAFA] hover:bg-[#FAFAFA] hover:text-[#111]'
+                                  : 'border-[#DDD] text-[#111] hover:border-[#111] hover:bg-[#111] hover:text-[#FAFAFA]'
+                            }`}
+                          >
+                            {unlocked ? <Download size={14} /> : <Lock size={13} />}
+                          </button>
+
+                          <AnimatePresence>
+                            {unlocked && openDownload === track.id && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.15 }}
+                                className="absolute right-0 top-full mt-1 z-20 bg-[#111] border border-[#333] min-w-[130px]"
+                              >
+                                {track.download_formats.map(fmt => (
+                                  <a
+                                    key={fmt.id}
+                                    href={api.promoDownloadUrl(slug, track.id, token, fmt.id)}
+                                    onClick={() => { beacon('click', track.id); setOpenDownload(null); }}
+                                    className="block px-4 py-2.5 text-[11px] font-semibold tracking-[0.12em] uppercase text-[#FAFAFA] hover:bg-[#C8302B] transition-colors whitespace-nowrap"
+                                  >
+                                    {fmt.label}
+                                  </a>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
                       )}
                     </div>
 
@@ -375,18 +431,35 @@ export default function PromoLanding() {
             </div>
 
             {/* Overall feedback */}
-            <div className="mt-16 border-t-4 border-[#111] pt-8">
+            <div ref={overallRef} className="mt-16 border-t-4 border-[#111] pt-8">
               <p className="text-[10px] font-semibold tracking-[0.3em] uppercase text-[#C0BABC] mb-3">
                 Overall
               </p>
               <h2 className="text-2xl md:text-3xl text-[#111] mb-3">What did you think?</h2>
-              <p className="text-sm text-[#666] mb-8 max-w-md leading-relaxed">
+              <p className="text-sm text-[#666] mb-6 max-w-md leading-relaxed">
                 Anything you write here goes straight to us — no middleman, no distro. It genuinely
                 shapes what we put out next.
               </p>
+
+              {campaign.download_enabled && campaign.require_feedback && (
+                <div className={`flex items-start gap-2.5 mb-8 px-4 py-3 border ${
+                  unlocked ? 'border-[#E0E0E0] text-[#666]' : 'border-[#C8302B] text-[#111]'
+                }`}>
+                  {unlocked
+                    ? <Check size={15} className="text-[#C8302B] mt-0.5 shrink-0" />
+                    : <Lock size={14} className="text-[#C8302B] mt-0.5 shrink-0" />}
+                  <p className="text-xs leading-relaxed">
+                    {unlocked
+                      ? 'Downloads are unlocked. Thanks — that rating is genuinely useful.'
+                      : 'Give the release a star rating and the downloads unlock straight away.'}
+                  </p>
+                </div>
+              )}
+
               <PromoFeedbackForm
                 initial={feedback['overall']}
                 onSave={body => saveFeedback(null, body)}
+                tracks={tracks}
               />
             </div>
 

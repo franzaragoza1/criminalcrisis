@@ -255,16 +255,16 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
   const addTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     const formEl = e.target as HTMLFormElement;
-    const audio = (formEl.elements.namedItem('audio') as HTMLInputElement).files?.[0];
     const master = (formEl.elements.namedItem('master') as HTMLInputElement).files?.[0];
-    if (!audio) { alert('Choose an audio file'); return; }
+    const mp3 = (formEl.elements.namedItem('mp3') as HTMLInputElement).files?.[0];
+    if (!master) { alert('Choose the master audio file'); return; }
 
     setBusy(true);
     try {
       const fd = new FormData();
-      fd.append('audio', audio);
-      if (master) fd.append('master', master);
-      fd.append('title', trackForm.title || audio.name.replace(/\.[^.]+$/, ''));
+      fd.append('master', master);
+      if (mp3) fd.append('mp3', mp3);
+      fd.append('title', trackForm.title || master.name.replace(/\.[^.]+$/, ''));
       fd.append('artist_name', trackForm.artist_name);
       await api.addPromoTrack(campaign.id, fd);
       setTrackForm({ title: '', artist_name: '' });
@@ -333,8 +333,9 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
           <div className="border border-[#E0E0E0] bg-white p-5">
             <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2"><Music size={14} /> Tracks</h3>
             <p className="text-xs text-[#888] mb-4">
-              The streaming file is transcoded to 128kbps automatically. Add a master (WAV/320) only if
-              you want recipients to download a higher-quality copy.
+              Upload the master once — WAV or AIFF ideally. The 128kbps stream and the 320 MP3
+              download are both derived from it, so recipients can choose their format. Upload your
+              own 320 only if you'd rather control the encode yourself.
             </p>
 
             {stats?.perTrack.map((tr, i) => (
@@ -363,12 +364,12 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                 <input value={trackForm.artist_name} onChange={e => setTrackForm({ ...trackForm, artist_name: e.target.value })} className={INPUT_CLS} />
               </div>
               <div>
-                <label className={LABEL_CLS}>Audio file *</label>
-                <input name="audio" type="file" accept="audio/*" className="text-sm text-[#888]" />
+                <label className={LABEL_CLS}>Master — WAV / AIFF *</label>
+                <input name="master" type="file" accept="audio/*,.wav,.aiff,.aif,.flac" className="text-sm text-[#888]" />
               </div>
               <div>
-                <label className={LABEL_CLS}>Master for download (optional)</label>
-                <input name="master" type="file" accept="audio/*" className="text-sm text-[#888]" />
+                <label className={LABEL_CLS}>Your own MP3 320 (optional)</label>
+                <input name="mp3" type="file" accept="audio/mpeg,.mp3" className="text-sm text-[#888]" />
               </div>
               <div className="md:col-span-2">
                 <button type="submit" disabled={busy} className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
@@ -451,6 +452,25 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
             </div>
           ) : null}
 
+          {/* Favourite track — the clearest signal for picking the lead single */}
+          {stats && stats.favourites.some(f => f.votes > 0) && (
+            <div className="border border-[#E0E0E0] bg-white p-5">
+              <h3 className="text-sm font-bold text-[#111] mb-4">Favourite track</h3>
+              {(() => {
+                const top = Math.max(...stats.favourites.map(f => f.votes), 1);
+                return stats.favourites.map(f => (
+                  <div key={f.id} className="flex items-center gap-3 py-1.5">
+                    <span className="text-sm text-[#111] w-48 truncate shrink-0">{f.title}</span>
+                    <div className="flex-1 bg-[#F0F0F0] h-4">
+                      <div className="h-full bg-[#C8302B]" style={{ width: `${(f.votes / top) * 100}%` }} />
+                    </div>
+                    <span className="font-mono text-xs text-[#666] w-10 text-right shrink-0">{f.votes}</span>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+
           {/* Feedback */}
           {stats && stats.feedback.length > 0 && (
             <div className="border border-[#E0E0E0] bg-white p-5">
@@ -462,7 +482,12 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                       <span className="text-sm font-semibold text-[#111]">{f.name || f.email}</span>
                       {f.company && <span className="text-xs text-[#888]">{f.company}</span>}
                       {f.track_title && <span className="text-[10px] uppercase tracking-wide bg-[#F0F0F0] px-2 py-0.5 text-[#666]">{f.track_title}</span>}
-                      {f.rating != null && <span className="text-xs font-mono text-[#C8302B]">{'■'.repeat(f.rating)}<span className="text-[#DDD]">{'■'.repeat(5 - f.rating)}</span></span>}
+                      {f.rating != null && <span className="text-xs font-mono text-[#C8302B]">{'★'.repeat(f.rating)}<span className="text-[#DDD]">{'★'.repeat(5 - f.rating)}</span></span>}
+                      {f.favourite_track_title && (
+                        <span className="text-[10px] uppercase tracking-wide text-[#888]">
+                          fave: <span className="text-[#111]">{f.favourite_track_title}</span>
+                        </span>
+                      )}
                       {f.will_play && (
                         <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 ${
                           f.will_play === 'yes' ? 'bg-[#111] text-white' : f.will_play === 'maybe' ? 'bg-[#E8E8E8] text-[#666]' : 'bg-[#F0F0F0] text-[#999]'}`}>
@@ -517,7 +542,10 @@ function CampaignsTab() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [selected, setSelected] = useState<PromoCampaign | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ title: '', subject: '', body_intro: '', embargo_date: '', release_id: '', download_enabled: true });
+  const [form, setForm] = useState({
+    title: '', subject: '', body_intro: '', release_date: '', release_id: '',
+    download_enabled: true, require_feedback: true,
+  });
   const [reload, setReload] = useState(0);
   const refresh = () => setReload(n => n + 1);
 
@@ -543,12 +571,16 @@ function CampaignsTab() {
       fd.append('title', form.title);
       fd.append('subject', form.subject);
       fd.append('body_intro', form.body_intro);
-      fd.append('embargo_date', form.embargo_date);
+      fd.append('release_date', form.release_date);
       if (form.release_id) fd.append('release_id', form.release_id);
       fd.append('download_enabled', form.download_enabled ? '1' : '0');
+      fd.append('require_feedback', form.require_feedback ? '1' : '0');
       if (artwork) fd.append('artwork', artwork);
       await api.createPromoCampaign(fd);
-      setForm({ title: '', subject: '', body_intro: '', embargo_date: '', release_id: '', download_enabled: true });
+      setForm({
+        title: '', subject: '', body_intro: '', release_date: '', release_id: '',
+        download_enabled: true, require_feedback: true,
+      });
       setCreating(false);
       refresh();
     } catch (e2) { err(e2); }
@@ -587,8 +619,8 @@ function CampaignsTab() {
           </div>
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className={LABEL_CLS}>Embargo date</label>
-              <input value={form.embargo_date} onChange={e => setForm({ ...form, embargo_date: e.target.value })}
+              <label className={LABEL_CLS}>Release date</label>
+              <input value={form.release_date} onChange={e => setForm({ ...form, release_date: e.target.value })}
                      placeholder="e.g. 12 September 2026" className={INPUT_CLS} />
             </div>
             <div>
@@ -603,11 +635,19 @@ function CampaignsTab() {
               <input name="artwork" type="file" accept="image/*" className="text-sm text-[#888]" />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-[#555]">
-            <input type="checkbox" checked={form.download_enabled}
-                   onChange={e => setForm({ ...form, download_enabled: e.target.checked })} />
-            Allow downloads
-          </label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[#555]">
+              <input type="checkbox" checked={form.download_enabled}
+                     onChange={e => setForm({ ...form, download_enabled: e.target.checked })} />
+              Allow downloads
+            </label>
+            <label className="flex items-center gap-2 text-sm text-[#555]">
+              <input type="checkbox" checked={form.require_feedback}
+                     disabled={!form.download_enabled}
+                     onChange={e => setForm({ ...form, require_feedback: e.target.checked })} />
+              Require a star rating before downloading
+            </label>
+          </div>
           <div className="flex gap-2">
             <button type="submit" className={BTN_PRIMARY}>Create</button>
             <button type="button" onClick={() => setCreating(false)} className={BTN_SECONDARY}>Cancel</button>

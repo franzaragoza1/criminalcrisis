@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
-import type { PromoFeedbackEntry, WillPlay } from '../../types';
+import { Check, Star } from 'lucide-react';
+import type { PromoFeedbackEntry, PromoTrack, WillPlay } from '../../types';
 
-type Body = { rating?: number; will_play?: WillPlay; comment?: string };
+type Body = {
+  rating?: number;
+  will_play?: WillPlay;
+  comment?: string;
+  favourite_track_id?: number;
+};
 
 const WILL_PLAY: { value: WillPlay; label: string }[] = [
   { value: 'yes', label: 'Yes' },
@@ -11,24 +16,27 @@ const WILL_PLAY: { value: WillPlay; label: string }[] = [
 ];
 
 /**
- * Rating and "will you play it" autosave the moment they're clicked — asking a
- * busy DJ to click a save button is how you end up with no feedback at all.
- * Only the free-text comment needs an explicit save, since it has a natural end.
+ * Rating, favourite track and "will you play it" autosave on click — asking a
+ * busy DJ to press save is how you end up with no feedback at all. Only the
+ * free-text comment needs an explicit save, since it has a natural end.
  *
- * Rating uses square blocks rather than stars to stay inside the label's
- * square-cornered visual language.
+ * Clicking the current rating again clears it back to zero.
  */
 export default function PromoFeedbackForm({
   initial,
   onSave,
   dark = false,
+  tracks,
 }: {
   initial?: PromoFeedbackEntry;
   onSave: (body: Body) => Promise<void>;
   dark?: boolean;
+  /** When present, shows the favourite-track picker (overall feedback only). */
+  tracks?: PromoTrack[];
 }) {
-  const [rating, setRating] = useState<number | null>(initial?.rating ?? null);
+  const [rating, setRating] = useState<number>(initial?.rating ?? 0);
   const [willPlay, setWillPlay] = useState<WillPlay | null>(initial?.will_play ?? null);
+  const [favourite, setFavourite] = useState<number | null>(initial?.favourite_track_id ?? null);
   const [comment, setComment] = useState(initial?.comment ?? '');
   const [hover, setHover] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -40,9 +48,10 @@ export default function PromoFeedbackForm({
     setSaving(true);
     try {
       await onSave({
-        rating: rating ?? undefined,
+        rating,
         will_play: willPlay ?? undefined,
         comment: comment || undefined,
+        favourite_track_id: favourite ?? undefined,
         ...patch,
       });
       setSavedAt(Date.now());
@@ -55,7 +64,7 @@ export default function PromoFeedbackForm({
 
   const label = dark ? 'text-[#888]' : 'text-[#999]';
   const border = dark ? 'border-[#3A3A3A]' : 'border-[#DDD]';
-  const idleBlock = dark ? 'bg-[#2A2A2A]' : 'bg-[#E8E8E8]';
+  const dim = dark ? 'text-[#3A3A3A]' : 'text-[#DDD]';
 
   return (
     <div className="space-y-5 max-w-lg">
@@ -63,22 +72,34 @@ export default function PromoFeedbackForm({
         {/* Rating */}
         <div>
           <p className={`text-[10px] font-semibold tracking-[0.2em] uppercase mb-2 ${label}`}>Rating</p>
-          <div className="flex gap-1" onMouseLeave={() => setHover(null)}>
+          <div className="flex items-center gap-1" onMouseLeave={() => setHover(null)}>
             {[1, 2, 3, 4, 5].map(n => {
-              const lit = (hover ?? rating ?? 0) >= n;
+              const lit = (hover ?? rating) >= n;
               return (
                 <button
                   key={n}
                   type="button"
-                  aria-label={`${n} out of 5`}
+                  aria-label={`${n} of 5`}
                   onMouseEnter={() => setHover(n)}
-                  onClick={() => { setRating(n); void persist({ rating: n }); }}
-                  className={`w-6 h-6 transition-colors cursor-pointer ${
-                    lit ? 'bg-[#C8302B]' : idleBlock
-                  }`}
-                />
+                  onClick={() => {
+                    const next = rating === n ? 0 : n;
+                    setRating(next);
+                    void persist({ rating: next });
+                  }}
+                  className="p-0.5 transition-transform hover:scale-110 cursor-pointer"
+                >
+                  <Star
+                    size={22}
+                    className={lit ? 'text-[#C8302B]' : dim}
+                    fill={lit ? 'currentColor' : 'none'}
+                    strokeWidth={1.5}
+                  />
+                </button>
               );
             })}
+            <span className={`ml-2 font-mono text-[11px] tabular-nums ${label}`}>
+              {rating}/5
+            </span>
           </div>
         </div>
 
@@ -108,6 +129,37 @@ export default function PromoFeedbackForm({
           </div>
         </div>
       </div>
+
+      {/* Favourite track — overall feedback only */}
+      {tracks && tracks.length > 0 && (
+        <div>
+          <p className={`text-[10px] font-semibold tracking-[0.2em] uppercase mb-2 ${label}`}>Favourite track</p>
+          <div className="flex flex-wrap gap-1.5">
+            {tracks.map((t, i) => {
+              const active = favourite === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    const next = active ? null : t.id;
+                    setFavourite(next);
+                    void persist({ favourite_track_id: next ?? undefined });
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-[#C8302B] border-[#C8302B] text-[#FAFAFA]'
+                      : `${border} ${dark ? 'text-[#AAA] hover:text-[#FAFAFA]' : 'text-[#666] hover:border-[#111] hover:text-[#111]'}`
+                  }`}
+                >
+                  <span className="font-mono text-[10px] opacity-60">{String(i + 1).padStart(2, '0')}</span>
+                  {t.title}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Comment */}
       <div>

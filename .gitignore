@@ -9,4 +9,10 @@ client/.env
 server/uploads/*
 !server/uploads/.gitkeep
 .claude/
+.vscode/
 client/public/img/logo3d.mov
+
+# Contact lists. This repo is public — a promo CSV committed here would expose
+# every recipient's address permanently, and git history is not easy to scrub.
+# Import them through /admin instead.
+*.csv

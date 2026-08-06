@@ -113,8 +113,9 @@ export async function initDb() {
       artwork_url TEXT,
       release_id INTEGER REFERENCES releases(id) ON DELETE SET NULL,
       status TEXT DEFAULT 'draft',
-      embargo_date TEXT,
+      release_date TEXT,
       download_enabled INTEGER DEFAULT 1,
+      require_feedback INTEGER DEFAULT 1,
       expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
@@ -128,8 +129,13 @@ export async function initDb() {
       title TEXT NOT NULL,
       artist_name TEXT,
       stream_public_id TEXT,
+      -- The master as uploaded (WAV/AIFF/320). download_format records its real
+      -- extension so we know whether a separate lossless download is on offer.
       download_public_id TEXT,
       download_format TEXT,
+      -- Optional hand-encoded 320 MP3. When null, the 320 is derived from the
+      -- master on delivery.
+      mp3_public_id TEXT,
       duration_seconds INTEGER,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
@@ -176,6 +182,10 @@ export async function initDb() {
       rating INTEGER,
       will_play TEXT,
       comment TEXT,
+      -- Only meaningful on the overall row (track_id IS NULL): which track the
+      -- recipient rated highest. Nulled rather than cascaded so deleting a track
+      -- doesn't wipe someone's whole feedback entry.
+      favourite_track_id INTEGER REFERENCES promo_tracks(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
@@ -199,6 +209,23 @@ export async function initDb() {
   // Safe migrations — add new columns if they don't exist yet
   await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);
+  await pool.query(`ALTER TABLE promo_tracks ADD COLUMN IF NOT EXISTS mp3_public_id TEXT`);
+  await pool.query(`ALTER TABLE promo_campaigns ADD COLUMN IF NOT EXISTS require_feedback INTEGER DEFAULT 1`);
+  await pool.query(`ALTER TABLE promo_feedback ADD COLUMN IF NOT EXISTS favourite_track_id INTEGER REFERENCES promo_tracks(id) ON DELETE SET NULL`);
+
+  // "Embargo" is press language; for a club label the useful date is when the
+  // record is out. Postgres has no IF EXISTS for RENAME COLUMN, hence the guard.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name='promo_campaigns' AND column_name='embargo_date')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name='promo_campaigns' AND column_name='release_date') THEN
+        ALTER TABLE promo_campaigns RENAME COLUMN embargo_date TO release_date;
+      END IF;
+    END $$;
+  `);
 
   const heroResult = await pool.query('SELECT id FROM hero_content WHERE id = 1');
   if (heroResult.rows.length === 0) {

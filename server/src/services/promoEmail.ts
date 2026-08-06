@@ -20,7 +20,7 @@ export type PromoEmailContent = {
   campaignTitle: string;
   bodyIntro: string | null;
   artworkUrl: string | null;
-  embargoDate: string | null;
+  releaseDate: string | null;
   trackTitles: string[];
   promoUrl: string;
   unsubscribeUrl: string;
@@ -65,9 +65,11 @@ export function renderPromoHtml(c: PromoEmailContent): string {
          style="display:block; width:200px; height:200px; border:0; margin:0 0 24px;">`
     : '';
 
-  const embargo = c.embargoDate
+  // DJs are meant to play promos out before release — the only ask is that the
+  // files don't get uploaded. "Embargo" would say the opposite.
+  const releaseLine = c.releaseDate
     ? `<p style="margin:0 0 24px;${font} font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:${RED};">
-         Embargo until ${escapeHtml(c.embargoDate)}
+         Out ${escapeHtml(c.releaseDate)}
        </p>`
     : '';
 
@@ -98,7 +100,7 @@ export function renderPromoHtml(c: PromoEmailContent): string {
               ${escapeHtml(c.campaignTitle)}
             </h1>
 
-            ${embargo}
+            ${releaseLine}
             ${artwork}
             ${intro}
             ${tracks}
@@ -145,7 +147,7 @@ export function renderPromoText(c: PromoEmailContent): string {
     c.campaignTitle.toUpperCase(),
   ];
 
-  if (c.embargoDate) lines.push(`Embargo until ${c.embargoDate}`);
+  if (c.releaseDate) lines.push(`Out ${c.releaseDate}`);
   lines.push('');
 
   if (c.bodyIntro) lines.push(c.bodyIntro.trim(), '');

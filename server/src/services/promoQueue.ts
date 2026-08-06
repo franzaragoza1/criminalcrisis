@@ -77,7 +77,7 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
     `SELECT r.id, r.access_token,
             c.email, c.name AS contact_name, c.unsub_token,
             camp.id AS campaign_id, camp.slug, camp.title, camp.subject,
-            camp.body_intro, camp.artwork_url, camp.embargo_date, camp.download_enabled
+            camp.body_intro, camp.artwork_url, camp.release_date, camp.download_enabled
        FROM promo_recipients r
        JOIN promo_contacts c    ON c.id = r.contact_id
        JOIN promo_campaigns camp ON camp.id = r.campaign_id
@@ -113,7 +113,7 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
       campaignTitle: row.title,
       bodyIntro: row.body_intro,
       artworkUrl: row.artwork_url,
-      embargoDate: row.embargo_date,
+      releaseDate: row.release_date,
       trackTitles: titlesByCampaign.get(row.campaign_id) || [],
       promoUrl: promoUrlFor(row.slug, row.access_token),
       unsubscribeUrl: unsubscribeUrlFor(row.unsub_token),

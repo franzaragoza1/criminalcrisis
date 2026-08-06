@@ -71,12 +71,18 @@ export interface PromoCampaign {
   artwork_url?: string;
   release_id?: number;
   status: 'draft' | 'sending' | 'sent';
-  embargo_date?: string;
+  release_date?: string;
   download_enabled: number;
+  require_feedback: number;
   created_at: string;
   track_count?: number;
   recipient_count?: number;
   queued_count?: number;
+}
+
+export interface DownloadFormat {
+  id: 'mp3' | 'wav';
+  label: string;
 }
 
 /** Shape returned to a recipient by GET /api/promo/:slug?k= */
@@ -86,6 +92,7 @@ export interface PromoTrack {
   artist_name?: string;
   duration_seconds?: number;
   stream_url: string | null;
+  download_formats: DownloadFormat[];
 }
 
 export interface PromoFeedbackEntry {
@@ -93,6 +100,7 @@ export interface PromoFeedbackEntry {
   rating?: number | null;
   will_play?: WillPlay | null;
   comment?: string | null;
+  favourite_track_id?: number | null;
 }
 
 export interface PromoView {
@@ -101,10 +109,12 @@ export interface PromoView {
     slug: string;
     body_intro?: string;
     artwork_url?: string;
-    embargo_date?: string;
+    release_date?: string;
     download_enabled: boolean;
+    require_feedback: boolean;
   };
   contactName: string | null;
+  downloadsUnlocked: boolean;
   tracks: PromoTrack[];
   feedback: PromoFeedbackEntry[];
 }
@@ -123,10 +133,12 @@ export interface PromoStats {
   }>;
   feedback: Array<{
     rating?: number; will_play?: WillPlay; comment?: string; created_at: string;
-    name?: string; email: string; company?: string; track_title?: string;
+    name?: string; email: string; company?: string;
+    track_title?: string; favourite_track_title?: string;
   }>;
   perTrack: Array<{
     id: number; title: string; plays: number; completes: number;
     downloads: number; avg_rating?: string;
   }>;
+  favourites: Array<{ id: number; title: string; votes: number }>;
 }

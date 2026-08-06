@@ -88,6 +88,12 @@ export async function uploadAudioToCloudinary(
 /**
  * Signed delivery URL for in-browser streaming. CDN-cacheable, and unguessable
  * without our API secret.
+ *
+ * The transformation here must stay identical to the `eager` block in
+ * uploadAudioToCloudinary: matching it means the derivative already exists, so
+ * the first listener gets a cache hit instead of an on-the-fly transcode.
+ * Omitting it delivers the *original* upload — a 50MB WAV per listener, which
+ * defeats the whole point of transcoding.
  */
 export function signedAudioStreamUrl(publicId: string): string {
   return cloudinary.url(publicId, {
@@ -95,13 +101,19 @@ export function signedAudioStreamUrl(publicId: string): string {
     type: 'authenticated',
     sign_url: true,
     secure: true,
+    format: 'mp3',
+    audio_codec: 'mp3',
+    bit_rate: '128k',
   });
 }
 
 /**
- * Time-limited download link. `private_download_url` routes through Cloudinary's
- * authenticated API rather than the CDN, so the link genuinely stops working
- * after `ttlSeconds` — worth the slower first byte for a file people keep.
+ * Time-limited download of the untouched original (the master a DJ actually
+ * wants). `private_download_url` routes through Cloudinary's authenticated API
+ * rather than the CDN, so the link genuinely stops working after `ttlSeconds` —
+ * worth the slower first byte for a file people keep.
+ *
+ * Only works for originals: it cannot apply a transformation.
  */
 export function expiringAudioDownloadUrl(
   publicId: string,
@@ -114,6 +126,35 @@ export function expiringAudioDownloadUrl(
     expires_at: Math.floor(Date.now() / 1000) + ttlSeconds,
   });
 }
+
+/**
+ * Signed download of a *derived* file — used for the 320kbps MP3 when it's
+ * transcoded from the master rather than uploaded separately.
+ *
+ * `private_download_url` can't carry a transformation, so this builds a signed
+ * delivery URL with `fl_attachment` instead. No built-in expiry, but the
+ * signature can't be forged without our API secret and we only mint it after
+ * the recipient's token checks out.
+ */
+export function signedAudioAttachmentUrl(
+  publicId: string,
+  options: { format?: string; bitRate?: string; filename?: string } = {}
+): string {
+  const { format = 'mp3', bitRate = '320k', filename } = options;
+  return cloudinary.url(publicId, {
+    resource_type: 'video',
+    type: 'authenticated',
+    sign_url: true,
+    secure: true,
+    format,
+    audio_codec: format === 'mp3' ? 'mp3' : undefined,
+    bit_rate: bitRate,
+    flags: filename ? `attachment:${filename}` : 'attachment',
+  });
+}
+
+/** Formats we treat as lossless masters worth offering as a separate download. */
+export const LOSSLESS_FORMATS = new Set(['wav', 'aiff', 'aif', 'flac', 'alac']);
 
 export async function deleteAudioFromCloudinary(publicId: string): Promise<void> {
   await cloudinary.uploader.destroy(publicId, {
