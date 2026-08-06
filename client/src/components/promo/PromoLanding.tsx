@@ -435,11 +435,7 @@ export default function PromoLanding() {
               <p className="text-[10px] font-semibold tracking-[0.3em] uppercase text-[#C0BABC] mb-3">
                 Overall
               </p>
-              <h2 className="text-2xl md:text-3xl text-[#111] mb-3">What did you think?</h2>
-              <p className="text-sm text-[#666] mb-6 max-w-md leading-relaxed">
-                Anything you write here goes straight to us — no middleman, no distro. It genuinely
-                shapes what we put out next.
-              </p>
+              <h2 className="text-2xl md:text-3xl text-[#111] mb-6">What did you think?</h2>
 
               {campaign.download_enabled && campaign.require_feedback && (
                 <div className={`flex items-start gap-2.5 mb-8 px-4 py-3 border ${
