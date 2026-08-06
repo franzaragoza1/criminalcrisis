@@ -1,0 +1,890 @@
+import { Router } from 'express';
+import crypto from 'crypto';
+import multer from 'multer';
+import { pool } from '../db/database.js';
+import { authMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../lib/rateLimit.js';
+import { parseCsvRecords, toCsv } from '../lib/csv.js';
+import { verifySvixSignature } from '../lib/svix.js';
+import {
+  uploadToCloudinary,
+  uploadAudioToCloudinary,
+  signedAudioStreamUrl,
+  expiringAudioDownloadUrl,
+  deleteAudioFromCloudinary,
+} from '../services/cloudinary.js';
+import {
+  drainQueue,
+  newToken,
+  promoUrlFor,
+  unsubscribeUrlFor,
+  siteUrl,
+  dailyCap,
+} from '../services/promoQueue.js';
+import { createDomain, listDomains, getDomain, verifyDomain, sendPromoEmail } from '../services/resend.js';
+import { renderPromoHtml, renderPromoText, type PromoEmailContent } from '../services/promoEmail.js';
+
+const router = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 200 * 1024 * 1024 }, // masters can be large WAVs
+});
+
+const slugify = (s: string) =>
+  s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 80);
+
+/**
+ * Single-segment admin routes are registered before the public `/:slug` handler,
+ * so a campaign slugged "campaigns" would be unreachable. Suffix those instead.
+ */
+const RESERVED_SLUGS = new Set(['contacts', 'campaigns', 'domains', 'queue', 'webhook', 'unsubscribe', 'signup', 'tracks']);
+
+const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+
+const parseTags = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw.split(/[,;|]/).map(t => t.trim()).filter(Boolean);
+    }
+  }
+  return [];
+};
+
+// ===========================================================================
+// ADMIN — contacts
+// Registered before the public `/:slug` routes so those don't shadow them.
+// ===========================================================================
+
+router.get('/contacts', authMiddleware, async (req, res) => {
+  try {
+    const { status, role, q } = req.query as Record<string, string | undefined>;
+    const where: string[] = [];
+    const params: unknown[] = [];
+
+    if (status) { params.push(status); where.push(`status = $${params.length}`); }
+    if (role) { params.push(role); where.push(`role = $${params.length}`); }
+    if (q) {
+      params.push(`%${q.toLowerCase()}%`);
+      where.push(`(LOWER(email) LIKE $${params.length} OR LOWER(COALESCE(name,'')) LIKE $${params.length} OR LOWER(COALESCE(company,'')) LIKE $${params.length})`);
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, name, role, country, company, tags, status, source, notes, created_at
+         FROM promo_contacts
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY created_at DESC`,
+      params
+    );
+    res.json(result.rows.map(r => ({ ...r, tags: JSON.parse(r.tags || '[]') })));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/contacts/stats', authMiddleware, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT status, COUNT(*)::int AS count FROM promo_contacts GROUP BY status
+    `);
+    const byRole = await pool.query(`
+      SELECT role, COUNT(*)::int AS count FROM promo_contacts WHERE status = 'active' GROUP BY role
+    `);
+    res.json({
+      byStatus: Object.fromEntries(rows.map(r => [r.status, r.count])),
+      byRole: Object.fromEntries(byRole.rows.map(r => [r.role || 'unknown', r.count])),
+      total: rows.reduce((sum, r) => sum + r.count, 0),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** CSV backup. The contact list is the most valuable asset here — keep copies. */
+router.get('/contacts/export.csv', authMiddleware, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT email, name, role, country, company, tags, status, source, notes, created_at
+         FROM promo_contacts ORDER BY created_at ASC`
+    );
+    const csv = toCsv(
+      ['email', 'name', 'role', 'country', 'company', 'tags', 'status', 'source', 'notes', 'created_at'],
+      rows.map(r => [
+        r.email, r.name, r.role, r.country, r.company,
+        JSON.parse(r.tags || '[]').join('|'),
+        r.status, r.source, r.notes, r.created_at?.toISOString?.() ?? r.created_at,
+      ])
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="criminalcrisis-contacts-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Bulk import. Accepts a file upload (field `file`) or a raw `csv` string.
+ * Header names are matched loosely so a list exported from any distro imports
+ * without hand-editing the file first.
+ */
+router.post('/contacts/import', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    const raw = req.file ? req.file.buffer.toString('utf8') : (req.body?.csv as string | undefined);
+    if (!raw?.trim()) { res.status(400).json({ error: 'No CSV provided' }); return; }
+
+    const records = parseCsvRecords(raw);
+    if (records.length === 0) { res.status(400).json({ error: 'CSV has no data rows' }); return; }
+
+    const pick = (rec: Record<string, string>, keys: string[]) => {
+      for (const k of keys) if (rec[k]) return rec[k];
+      return '';
+    };
+
+    const defaultRole = (req.body?.default_role as string) || 'dj';
+    const extraTags = parseTags(req.body?.tags);
+
+    let imported = 0;
+    let updated = 0;
+    const invalid: string[] = [];
+
+    for (const rec of records) {
+      const email = pick(rec, ['email', 'e-mail', 'mail', 'correo', 'email address']).toLowerCase();
+      if (!isEmail(email)) { if (email) invalid.push(email); continue; }
+
+      const name = pick(rec, ['name', 'nombre', 'full name', 'contact', 'contact name', 'first name']);
+      const role = pick(rec, ['role', 'type', 'tipo', 'category']) || defaultRole;
+      const country = pick(rec, ['country', 'pais', 'país', 'location']);
+      const company = pick(rec, ['company', 'empresa', 'station', 'radio', 'outlet', 'magazine', 'organisation', 'organization']);
+      const tags = [...new Set([...parseTags(pick(rec, ['tags', 'etiquetas', 'groups'])), ...extraTags])];
+
+      const result = await pool.query(
+        `INSERT INTO promo_contacts (email, name, role, country, company, tags, source, unsub_token)
+              VALUES ($1, $2, $3, $4, $5, $6, 'import', $7)
+         ON CONFLICT (email) DO UPDATE
+                SET name    = COALESCE(NULLIF(EXCLUDED.name, ''), promo_contacts.name),
+                    role    = COALESCE(NULLIF(EXCLUDED.role, ''), promo_contacts.role),
+                    country = COALESCE(NULLIF(EXCLUDED.country, ''), promo_contacts.country),
+                    company = COALESCE(NULLIF(EXCLUDED.company, ''), promo_contacts.company),
+                    updated_at = NOW()
+           RETURNING (xmax = 0) AS inserted`,
+        [email, name || null, role.toLowerCase(), country || null, company || null, JSON.stringify(tags), newToken()]
+      );
+      if (result.rows[0].inserted) imported++;
+      else updated++;
+    }
+
+    res.json({ imported, updated, invalid, total: records.length });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/contacts', authMiddleware, async (req, res) => {
+  try {
+    const { email, name, role, country, company, tags, notes } = req.body;
+    if (!isEmail(String(email || ''))) { res.status(400).json({ error: 'Valid email required' }); return; }
+    const result = await pool.query(
+      `INSERT INTO promo_contacts (email, name, role, country, company, tags, notes, source, unsub_token)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,'manual',$8)
+       ON CONFLICT (email) DO NOTHING
+         RETURNING id`,
+      [String(email).toLowerCase(), name || null, (role || 'dj').toLowerCase(), country || null,
+       company || null, JSON.stringify(parseTags(tags)), notes || null, newToken()]
+    );
+    if (result.rows.length === 0) { res.status(409).json({ error: 'That email is already on the list' }); return; }
+    res.json({ id: result.rows[0].id });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+router.put('/contacts/:id', authMiddleware, async (req, res) => {
+  try {
+    const existing = await pool.query('SELECT * FROM promo_contacts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    const prev = existing.rows[0];
+    const { email, name, role, country, company, tags, status, notes } = req.body;
+    await pool.query(
+      `UPDATE promo_contacts
+          SET email=$1, name=$2, role=$3, country=$4, company=$5, tags=$6, status=$7, notes=$8, updated_at=NOW()
+        WHERE id=$9`,
+      [
+        email ? String(email).toLowerCase() : prev.email,
+        name ?? prev.name,
+        role ?? prev.role,
+        country ?? prev.country,
+        company ?? prev.company,
+        tags !== undefined ? JSON.stringify(parseTags(tags)) : prev.tags,
+        status ?? prev.status,
+        notes ?? prev.notes,
+        req.params.id,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+router.delete('/contacts/:id', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM promo_contacts WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===========================================================================
+// ADMIN — campaigns
+// ===========================================================================
+
+router.get('/campaigns', authMiddleware, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.*,
+             (SELECT COUNT(*)::int FROM promo_tracks t WHERE t.campaign_id = c.id) AS track_count,
+             (SELECT COUNT(*)::int FROM promo_recipients r WHERE r.campaign_id = c.id) AS recipient_count,
+             (SELECT COUNT(*)::int FROM promo_recipients r WHERE r.campaign_id = c.id AND r.send_status = 'queued') AS queued_count
+        FROM promo_campaigns c
+       ORDER BY c.created_at DESC
+    `);
+    res.json(rows);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns', authMiddleware, upload.single('artwork'), async (req, res) => {
+  try {
+    const { title, subject, body_intro, embargo_date, release_id, download_enabled } = req.body;
+    if (!title) { res.status(400).json({ error: 'Title required' }); return; }
+
+    let slug = slugify(title) || 'promo';
+    if (RESERVED_SLUGS.has(slug)) slug = `${slug}-promo`;
+    const clash = await pool.query('SELECT 1 FROM promo_campaigns WHERE slug = $1', [slug]);
+    if (clash.rows.length > 0) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
+
+    const artwork_url = req.file ? await uploadToCloudinary(req.file.buffer, 'promo-artwork') : null;
+
+    const { rows } = await pool.query(
+      `INSERT INTO promo_campaigns (title, slug, subject, body_intro, artwork_url, release_id, embargo_date, download_enabled)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, slug`,
+      [title, slug, subject || null, body_intro || null, artwork_url,
+       release_id ? Number(release_id) : null, embargo_date || null,
+       download_enabled === '0' || download_enabled === false ? 0 : 1]
+    );
+    res.json(rows[0]);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+router.put('/campaigns/:id', authMiddleware, upload.single('artwork'), async (req, res) => {
+  try {
+    const existing = await pool.query('SELECT * FROM promo_campaigns WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    const prev = existing.rows[0];
+    const { title, subject, body_intro, embargo_date, release_id, download_enabled } = req.body;
+    const artwork_url = req.file
+      ? await uploadToCloudinary(req.file.buffer, 'promo-artwork')
+      : prev.artwork_url;
+
+    await pool.query(
+      `UPDATE promo_campaigns
+          SET title=$1, subject=$2, body_intro=$3, artwork_url=$4, release_id=$5,
+              embargo_date=$6, download_enabled=$7
+        WHERE id=$8`,
+      [
+        title || prev.title,
+        subject ?? prev.subject,
+        body_intro ?? prev.body_intro,
+        artwork_url,
+        release_id !== undefined && release_id !== '' ? Number(release_id) : prev.release_id,
+        embargo_date ?? prev.embargo_date,
+        download_enabled === undefined ? prev.download_enabled : (download_enabled === '0' || download_enabled === false ? 0 : 1),
+        req.params.id,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+router.delete('/campaigns/:id', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT stream_public_id, download_public_id FROM promo_tracks WHERE campaign_id = $1', [req.params.id]);
+    for (const t of rows) {
+      // Best-effort cleanup so unreleased masters don't linger in Cloudinary.
+      if (t.stream_public_id) await deleteAudioFromCloudinary(t.stream_public_id).catch(() => {});
+      if (t.download_public_id && t.download_public_id !== t.stream_public_id) {
+        await deleteAudioFromCloudinary(t.download_public_id).catch(() => {});
+      }
+    }
+    await pool.query('DELETE FROM promo_campaigns WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Uploads one track. `audio` becomes the 128k stream; `master` the download. */
+router.post(
+  '/campaigns/:id/tracks',
+  authMiddleware,
+  upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'master', maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const audio = files?.audio?.[0];
+      const master = files?.master?.[0];
+      if (!audio) { res.status(400).json({ error: 'An audio file is required' }); return; }
+
+      const { title, artist_name, position } = req.body;
+      const stream = await uploadAudioToCloudinary(audio.buffer, 'promo-audio', { transcodeTo128: true });
+      const download = master
+        ? await uploadAudioToCloudinary(master.buffer, 'promo-masters')
+        : stream;
+
+      const { rows } = await pool.query(
+        `INSERT INTO promo_tracks (campaign_id, position, title, artist_name, stream_public_id, download_public_id, download_format, duration_seconds)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [
+          req.params.id,
+          position ? Number(position) : 0,
+          title || audio.originalname.replace(/\.[^.]+$/, ''),
+          artist_name || null,
+          stream.publicId,
+          download.publicId,
+          download.format,
+          stream.durationSeconds,
+        ]
+      );
+      res.json({ id: rows[0].id });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+router.delete('/tracks/:id', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT stream_public_id, download_public_id FROM promo_tracks WHERE id = $1', [req.params.id]);
+    if (rows[0]) {
+      if (rows[0].stream_public_id) await deleteAudioFromCloudinary(rows[0].stream_public_id).catch(() => {});
+      if (rows[0].download_public_id && rows[0].download_public_id !== rows[0].stream_public_id) {
+        await deleteAudioFromCloudinary(rows[0].download_public_id).catch(() => {});
+      }
+    }
+    await pool.query('DELETE FROM promo_tracks WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Adds recipients. Filter by role/tags, or pass explicit contact_ids. */
+router.post('/campaigns/:id/recipients', authMiddleware, async (req, res) => {
+  try {
+    const { contact_ids, roles, tags } = req.body as {
+      contact_ids?: number[]; roles?: string[]; tags?: string[];
+    };
+
+    const where: string[] = [`status = 'active'`];
+    const params: unknown[] = [];
+
+    if (Array.isArray(contact_ids) && contact_ids.length) {
+      params.push(contact_ids);
+      where.push(`id = ANY($${params.length}::int[])`);
+    }
+    if (Array.isArray(roles) && roles.length) {
+      params.push(roles);
+      where.push(`role = ANY($${params.length}::text[])`);
+    }
+    if (Array.isArray(tags) && tags.length) {
+      // tags is a JSON text column; match if any requested tag appears in it.
+      params.push(tags);
+      where.push(`EXISTS (SELECT 1 FROM json_array_elements_text(tags::json) AS t WHERE t = ANY($${params.length}::text[]))`);
+    }
+
+    const { rows: contacts } = await pool.query(
+      `SELECT id FROM promo_contacts WHERE ${where.join(' AND ')}`, params
+    );
+
+    let added = 0;
+    for (const c of contacts) {
+      const result = await pool.query(
+        `INSERT INTO promo_recipients (campaign_id, contact_id, access_token)
+              VALUES ($1,$2,$3) ON CONFLICT (campaign_id, contact_id) DO NOTHING RETURNING id`,
+        [req.params.id, c.id, newToken()]
+      );
+      if (result.rows.length) added++;
+    }
+
+    res.json({ added, matched: contacts.length });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/** Flips the campaign to 'sending'; the drip worker takes it from there. */
+router.post('/campaigns/:id/send', authMiddleware, async (req, res) => {
+  try {
+    const { rows: tracks } = await pool.query('SELECT COUNT(*)::int AS n FROM promo_tracks WHERE campaign_id = $1', [req.params.id]);
+    if (tracks[0].n === 0) { res.status(400).json({ error: 'Add at least one track before sending' }); return; }
+
+    const { rows: queued } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM promo_recipients WHERE campaign_id = $1 AND send_status = 'queued'`,
+      [req.params.id]
+    );
+    if (queued[0].n === 0) { res.status(400).json({ error: 'No queued recipients — add recipients first' }); return; }
+
+    await pool.query(`UPDATE promo_campaigns SET status = 'sending' WHERE id = $1`, [req.params.id]);
+
+    // Send the first slice immediately so the admin gets instant feedback that
+    // it works; the hourly worker handles the rest under the daily cap.
+    const summary = await drainQueue();
+    res.json({ queued: queued[0].n, dailyCap: dailyCap(), ...summary });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Sends the campaign to one arbitrary address for a pre-flight check. */
+router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
+  try {
+    const to = String(req.body?.email || '').toLowerCase();
+    if (!isEmail(to)) { res.status(400).json({ error: 'Valid email required' }); return; }
+
+    const { rows } = await pool.query('SELECT * FROM promo_campaigns WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    const campaign = rows[0];
+
+    const { rows: tracks } = await pool.query(
+      'SELECT title FROM promo_tracks WHERE campaign_id = $1 ORDER BY position ASC, id ASC', [req.params.id]
+    );
+
+    // A real recipient row keeps the preview link functional end to end.
+    const preview = await pool.query(
+      `SELECT r.access_token FROM promo_recipients r WHERE r.campaign_id = $1 LIMIT 1`, [req.params.id]
+    );
+    const token = preview.rows[0]?.access_token || 'preview';
+
+    const content: PromoEmailContent = {
+      contactName: 'there',
+      campaignTitle: campaign.title,
+      bodyIntro: campaign.body_intro,
+      artworkUrl: campaign.artwork_url,
+      embargoDate: campaign.embargo_date,
+      trackTitles: tracks.map(t => t.title),
+      promoUrl: promoUrlFor(campaign.slug, token),
+      unsubscribeUrl: unsubscribeUrlFor('test-token'),
+      downloadEnabled: campaign.download_enabled === 1,
+    };
+
+    const result = await sendPromoEmail({
+      to,
+      subject: `[TEST] ${campaign.subject || campaign.title}`,
+      html: renderPromoHtml(content),
+      text: renderPromoText(content),
+      unsubscribeUrl: content.unsubscribeUrl,
+    });
+
+    if (!result.ok) { res.status(502).json({ error: result.error }); return; }
+    res.json({ ok: true, messageId: result.messageId });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** The dashboard the distro never gave you: per-contact engagement. */
+router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
+  try {
+    const { rows: campaignRows } = await pool.query('SELECT * FROM promo_campaigns WHERE id = $1', [req.params.id]);
+    if (campaignRows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const { rows: recipients } = await pool.query(
+      `SELECT r.id, r.send_status, r.sent_at, r.delivered_at, r.opened_at, r.first_visit_at, r.error,
+              c.email, c.name, c.role, c.company, c.country,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'play')     AS plays,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'download') AS downloads,
+              (SELECT COUNT(*)::int FROM promo_feedback f WHERE f.recipient_id = r.id)                       AS feedback_count
+         FROM promo_recipients r
+         JOIN promo_contacts c ON c.id = r.contact_id
+        WHERE r.campaign_id = $1
+        ORDER BY (r.first_visit_at IS NULL), r.first_visit_at DESC, c.email ASC`,
+      [req.params.id]
+    );
+
+    const { rows: feedback } = await pool.query(
+      `SELECT f.rating, f.will_play, f.comment, f.created_at,
+              c.name, c.email, c.company, t.title AS track_title
+         FROM promo_feedback f
+         JOIN promo_recipients r ON r.id = f.recipient_id
+         JOIN promo_contacts c   ON c.id = r.contact_id
+    LEFT JOIN promo_tracks t     ON t.id = f.track_id
+        WHERE r.campaign_id = $1
+        ORDER BY f.created_at DESC`,
+      [req.params.id]
+    );
+
+    const { rows: perTrack } = await pool.query(
+      `SELECT t.id, t.title,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'play')     AS plays,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'complete') AS completes,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'download') AS downloads,
+              (SELECT ROUND(AVG(f.rating)::numeric, 2) FROM promo_feedback f WHERE f.track_id = t.id)    AS avg_rating
+         FROM promo_tracks t
+        WHERE t.campaign_id = $1
+        ORDER BY t.position ASC, t.id ASC`,
+      [req.params.id]
+    );
+
+    const totals = {
+      recipients: recipients.length,
+      queued: recipients.filter(r => r.send_status === 'queued').length,
+      sent: recipients.filter(r => ['sent', 'delivered'].includes(r.send_status)).length,
+      delivered: recipients.filter(r => r.delivered_at).length,
+      bounced: recipients.filter(r => r.send_status === 'bounced').length,
+      failed: recipients.filter(r => r.send_status === 'failed').length,
+      skipped: recipients.filter(r => r.send_status === 'skipped').length,
+      visited: recipients.filter(r => r.first_visit_at).length,
+      played: recipients.filter(r => r.plays > 0).length,
+      downloaded: recipients.filter(r => r.downloads > 0).length,
+      feedback: feedback.length,
+    };
+
+    res.json({ campaign: campaignRows[0], totals, recipients, feedback, perTrack });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===========================================================================
+// ADMIN — email domain health
+// ===========================================================================
+
+router.get('/domains', authMiddleware, async (_req, res) => {
+  try { res.json(await listDomains()); }
+  catch (e: any) { res.status(502).json({ error: e.message }); }
+});
+
+router.post('/domains', authMiddleware, async (req, res) => {
+  try { res.json(await createDomain(String(req.body?.name || 'criminalcrisis.com'))); }
+  catch (e: any) { res.status(502).json({ error: e.message }); }
+});
+
+router.get('/domains/:id', authMiddleware, async (req, res) => {
+  try { res.json(await getDomain(String(req.params.id))); }
+  catch (e: any) { res.status(502).json({ error: e.message }); }
+});
+
+router.post('/domains/:id/verify', authMiddleware, async (req, res) => {
+  try { res.json(await verifyDomain(String(req.params.id))); }
+  catch (e: any) { res.status(502).json({ error: e.message }); }
+});
+
+// ===========================================================================
+// QUEUE WORKER — called by the hourly GitHub Action
+// ===========================================================================
+
+router.post('/queue/drain', async (req, res) => {
+  const secret = process.env.PROMO_CRON_SECRET;
+  const provided = req.headers['x-cron-secret'];
+
+  if (!secret) { res.status(503).json({ error: 'PROMO_CRON_SECRET not configured' }); return; }
+  const a = Buffer.from(String(provided ?? ''));
+  const b = Buffer.from(secret);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    res.json(await drainQueue(req.body?.limit ? Number(req.body.limit) : undefined));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===========================================================================
+// WEBHOOK — Resend delivery events (Svix-signed)
+// ===========================================================================
+
+export async function handleResendWebhook(req: any, res: any) {
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret) { res.status(503).json({ error: 'RESEND_WEBHOOK_SECRET not configured' }); return; }
+
+  if (!verifySvixSignature(req.body as Buffer, req.headers, secret)) {
+    res.status(401).json({ error: 'Invalid signature' });
+    return;
+  }
+
+  let event: any;
+  try {
+    event = JSON.parse((req.body as Buffer).toString('utf8'));
+  } catch {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
+
+  const type: string = event?.type || '';
+  const messageId: string | undefined = event?.data?.email_id;
+  const to: string | undefined = Array.isArray(event?.data?.to) ? event.data.to[0] : event?.data?.to;
+
+  try {
+    if (type === 'email.delivered' && messageId) {
+      await pool.query(
+        `UPDATE promo_recipients SET send_status = 'delivered', delivered_at = NOW() WHERE provider_message_id = $1`,
+        [messageId]
+      );
+    } else if (type === 'email.opened' && messageId) {
+      // Kept for completeness only. Apple Mail Privacy Protection pre-fetches
+      // images, so opens are noisy — visits and plays are the real signal.
+      await pool.query(
+        `UPDATE promo_recipients SET opened_at = COALESCE(opened_at, NOW()) WHERE provider_message_id = $1`,
+        [messageId]
+      );
+    } else if (type === 'email.bounced' || type === 'email.complained') {
+      const status = type === 'email.bounced' ? 'bounced' : 'complained';
+      if (messageId) {
+        await pool.query(
+          `UPDATE promo_recipients SET send_status = 'bounced', error = $1 WHERE provider_message_id = $2`,
+          [type, messageId]
+        );
+      }
+      // Suppress the contact so no future campaign can reach them. Continuing to
+      // mail bounces and complaints is the fastest way to wreck a sending domain.
+      if (to) {
+        await pool.query(
+          `UPDATE promo_contacts SET status = $1, updated_at = NOW() WHERE LOWER(email) = LOWER($2)`,
+          [status, to]
+        );
+      }
+    }
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error('[promo webhook]', e.message);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+}
+
+// ===========================================================================
+// PUBLIC — unsubscribe & signup
+// ===========================================================================
+
+/** GET = human clicked the footer link. POST = RFC 8058 one-click from Gmail. */
+async function unsubscribe(token: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE promo_contacts SET status = 'unsubscribed', updated_at = NOW()
+      WHERE unsub_token = $1 AND status <> 'unsubscribed'`,
+    [token]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+router.post('/unsubscribe/:token', async (req, res) => {
+  await unsubscribe(req.params.token);
+  // Always 200 — mail clients retry on errors and the outcome is idempotent.
+  res.json({ ok: true });
+});
+
+router.get('/unsubscribe/:token', async (req, res) => {
+  const found = await pool.query('SELECT email FROM promo_contacts WHERE unsub_token = $1', [req.params.token]);
+  await unsubscribe(req.params.token);
+  const email = found.rows[0]?.email;
+  res.redirect(302, `${siteUrl()}/unsubscribe/${req.params.token}${email ? `?e=${encodeURIComponent(email)}` : ''}`);
+});
+
+/** Public "get on the promo list" form. */
+router.post('/signup', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'promo-signup' }), async (req, res) => {
+  try {
+    const { email, name, role, country, company } = req.body;
+    if (!isEmail(String(email || ''))) { res.status(400).json({ error: 'Valid email required' }); return; }
+
+    await pool.query(
+      `INSERT INTO promo_contacts (email, name, role, country, company, source, unsub_token)
+            VALUES ($1,$2,$3,$4,$5,'signup',$6)
+       ON CONFLICT (email) DO UPDATE
+              SET name    = COALESCE(NULLIF(EXCLUDED.name, ''), promo_contacts.name),
+                  company = COALESCE(NULLIF(EXCLUDED.company, ''), promo_contacts.company),
+                  updated_at = NOW()`,
+      [String(email).toLowerCase(), name || null, (role || 'dj').toLowerCase(),
+       country || null, company || null, newToken()]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===========================================================================
+// PUBLIC — the promo landing itself (token-gated, no login)
+// Registered last so `/:slug` cannot shadow the routes above.
+// ===========================================================================
+
+const promoLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 300, keyPrefix: 'promo-public' });
+
+type ResolvedRecipient = {
+  recipientId: number;
+  campaign: any;
+  contactName: string | null;
+};
+
+async function resolveRecipient(slug: unknown, token: unknown): Promise<ResolvedRecipient | null> {
+  if (typeof slug !== 'string' || !slug) return null;
+  if (typeof token !== 'string' || token.length < 10) return null;
+  const { rows } = await pool.query(
+    `SELECT r.id AS recipient_id, c.name AS contact_name, camp.*
+       FROM promo_recipients r
+       JOIN promo_campaigns camp ON camp.id = r.campaign_id
+       JOIN promo_contacts c     ON c.id = r.contact_id
+      WHERE camp.slug = $1 AND r.access_token = $2`,
+    [slug, token]
+  );
+  if (rows.length === 0) return null;
+  const { recipient_id, contact_name, ...campaign } = rows[0];
+  return { recipientId: recipient_id, campaign, contactName: contact_name };
+}
+
+const isExpired = (campaign: any) =>
+  campaign.expires_at && new Date(campaign.expires_at).getTime() < Date.now();
+
+router.get('/:slug', promoLimiter, async (req, res) => {
+  try {
+    const resolved = await resolveRecipient(req.params.slug, req.query.k);
+    if (!resolved) { res.status(404).json({ error: 'This promo link is not valid.' }); return; }
+    if (isExpired(resolved.campaign)) { res.status(410).json({ error: 'This promo link has expired.' }); return; }
+
+    const { rows: tracks } = await pool.query(
+      `SELECT id, position, title, artist_name, stream_public_id, duration_seconds
+         FROM promo_tracks WHERE campaign_id = $1 ORDER BY position ASC, id ASC`,
+      [resolved.campaign.id]
+    );
+
+    const { rows: feedback } = await pool.query(
+      `SELECT track_id, rating, will_play, comment FROM promo_feedback WHERE recipient_id = $1`,
+      [resolved.recipientId]
+    );
+
+    await pool.query(
+      `UPDATE promo_recipients SET first_visit_at = COALESCE(first_visit_at, NOW()) WHERE id = $1`,
+      [resolved.recipientId]
+    );
+    await pool.query(
+      `INSERT INTO promo_events (recipient_id, type, meta) VALUES ($1, 'visit', $2)`,
+      [resolved.recipientId, JSON.stringify({ ua: String(req.headers['user-agent'] || '').slice(0, 200) })]
+    );
+
+    res.json({
+      campaign: {
+        title: resolved.campaign.title,
+        slug: resolved.campaign.slug,
+        body_intro: resolved.campaign.body_intro,
+        artwork_url: resolved.campaign.artwork_url,
+        embargo_date: resolved.campaign.embargo_date,
+        download_enabled: resolved.campaign.download_enabled === 1,
+      },
+      contactName: resolved.contactName,
+      tracks: tracks.map(t => ({
+        id: t.id,
+        title: t.title,
+        artist_name: t.artist_name,
+        duration_seconds: t.duration_seconds,
+        // Signed per request — never store a playable URL anywhere.
+        stream_url: t.stream_public_id ? signedAudioStreamUrl(t.stream_public_id) : null,
+      })),
+      feedback,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:slug/event', promoLimiter, async (req, res) => {
+  try {
+    const resolved = await resolveRecipient(req.params.slug, req.body?.k);
+    if (!resolved) { res.status(404).json({ error: 'Invalid link' }); return; }
+
+    const allowed = ['play', 'play_75', 'complete', 'click'];
+    const type = String(req.body?.type || '');
+    if (!allowed.includes(type)) { res.status(400).json({ error: 'Unknown event type' }); return; }
+
+    await pool.query(
+      `INSERT INTO promo_events (recipient_id, track_id, type) VALUES ($1, $2, $3)`,
+      [resolved.recipientId, req.body?.track_id ? Number(req.body.track_id) : null, type]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/:slug/download/:trackId', promoLimiter, async (req, res) => {
+  try {
+    const resolved = await resolveRecipient(req.params.slug, req.query.k);
+    if (!resolved) { res.status(404).json({ error: 'Invalid link' }); return; }
+    if (isExpired(resolved.campaign)) { res.status(410).json({ error: 'This promo link has expired.' }); return; }
+    if (resolved.campaign.download_enabled !== 1) { res.status(403).json({ error: 'Downloads are disabled for this promo.' }); return; }
+
+    const { rows } = await pool.query(
+      `SELECT download_public_id, download_format FROM promo_tracks WHERE id = $1 AND campaign_id = $2`,
+      [req.params.trackId, resolved.campaign.id]
+    );
+    if (rows.length === 0 || !rows[0].download_public_id) { res.status(404).json({ error: 'Track not found' }); return; }
+
+    await pool.query(
+      `INSERT INTO promo_events (recipient_id, track_id, type) VALUES ($1, $2, 'download')`,
+      [resolved.recipientId, req.params.trackId]
+    );
+
+    res.redirect(302, expiringAudioDownloadUrl(rows[0].download_public_id, rows[0].download_format || 'mp3'));
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:slug/feedback', promoLimiter, async (req, res) => {
+  try {
+    const resolved = await resolveRecipient(req.params.slug, req.body?.k);
+    if (!resolved) { res.status(404).json({ error: 'Invalid link' }); return; }
+
+    const trackId = req.body?.track_id ? Number(req.body.track_id) : null;
+    const rating = req.body?.rating != null ? Math.max(1, Math.min(5, Number(req.body.rating))) : null;
+    const willPlay = ['yes', 'maybe', 'no'].includes(req.body?.will_play) ? req.body.will_play : null;
+    const comment = req.body?.comment ? String(req.body.comment).slice(0, 2000) : null;
+
+    // Two partial unique indexes back this table (track-level and overall), so
+    // the conflict target has to be spelled out per case.
+    if (trackId === null) {
+      await pool.query(
+        `INSERT INTO promo_feedback (recipient_id, track_id, rating, will_play, comment)
+              VALUES ($1, NULL, $2, $3, $4)
+         ON CONFLICT (recipient_id) WHERE track_id IS NULL
+         DO UPDATE SET rating = EXCLUDED.rating, will_play = EXCLUDED.will_play,
+                       comment = EXCLUDED.comment, updated_at = NOW()`,
+        [resolved.recipientId, rating, willPlay, comment]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO promo_feedback (recipient_id, track_id, rating, will_play, comment)
+              VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (recipient_id, track_id) WHERE track_id IS NOT NULL
+         DO UPDATE SET rating = EXCLUDED.rating, will_play = EXCLUDED.will_play,
+                       comment = EXCLUDED.comment, updated_at = NOW()`,
+        [resolved.recipientId, trackId, rating, willPlay, comment]
+      );
+    }
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+export default router;

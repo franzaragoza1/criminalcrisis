@@ -1,0 +1,51 @@
+name: Promo drip
+
+# Render's free tier has no cron and sleeps the service after inactivity, so the
+# send queue is driven from here. The ping also wakes the API, which means the
+# first real visitor after a send isn't the one paying the cold-start cost.
+#
+# Required repository secrets:
+#   PROMO_API_URL      e.g. https://criminalcrisis.onrender.com
+#   PROMO_CRON_SECRET  must match the env var of the same name on Render
+
+on:
+  schedule:
+    - cron: '17 * * * *' # hourly, off the hour — GitHub delays jobs scheduled on :00
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max emails to send in this run (defaults to the daily cap)'
+        required: false
+        type: string
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drain the promo send queue
+        env:
+          API_URL: ${{ secrets.PROMO_API_URL }}
+          CRON_SECRET: ${{ secrets.PROMO_CRON_SECRET }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::PROMO_API_URL and PROMO_CRON_SECRET repository secrets must be set."
+            exit 1
+          fi
+
+          body='{}'
+          if [ -n "$LIMIT" ]; then body="{\"limit\":$LIMIT}"; fi
+
+          # Render cold starts can take ~50s, so allow a generous timeout and retry once.
+          response=$(curl --silent --show-error --fail-with-body \
+            --max-time 180 --retry 2 --retry-delay 30 --retry-connrefused \
+            -X POST "$API_URL/api/promo/queue/drain" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -d "$body")
+
+          echo "$response"
+          echo "### Promo drip" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$response" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

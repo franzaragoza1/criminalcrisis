@@ -10,6 +10,7 @@ import releaseRoutes from './routes/releases.js';
 import eventRoutes from './routes/events.js';
 import heroRoutes from './routes/hero.js';
 import contactRoutes from './routes/contact.js';
+import promoRoutes, { handleResendWebhook } from './routes/promo.js';
 import { createPaymentIntent, handleStripeWebhook } from './controllers/paymentController.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,8 +34,10 @@ app.use(cors({
     }
   }
 }));
-// 1. WEBHOOK: Debe ir ANTES de express.json() para mantener el buffer 'raw' para Stripe
+// 1. WEBHOOKS: Deben ir ANTES de express.json() para mantener el buffer 'raw',
+// necesario para verificar la firma (Stripe y Svix firman el cuerpo sin parsear)
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
+app.post('/api/promo/webhook/resend', express.raw({ type: 'application/json' }), handleResendWebhook);
 
 // MIDDLEWARE para parsear JSON en el resto de peticiones
 app.use(express.json());
@@ -49,12 +52,18 @@ app.use('/api/releases', releaseRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/hero', heroRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/promo', promoRoutes);
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 (async () => {
-  await initDb();
-  app.listen(PORT, () => {
-    console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
-  });
+  try {
+    await initDb();
+    app.listen(PORT, () => {
+      console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error('Fatal: could not initialize database, server not started.', err);
+    process.exit(1);
+  }
 })();

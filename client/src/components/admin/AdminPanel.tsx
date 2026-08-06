@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X } from 'lucide-react';
+import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send } from 'lucide-react';
 import { api } from '../../api';
 import type { Artist, Release, Event } from '../../types';
+import { INPUT_CLS, LABEL_CLS } from './adminStyles';
+import PromoAdmin from './PromoAdmin';
 
-type Section = 'home' | 'releases' | 'artists' | 'events';
-
-const INPUT_CLS = 'w-full border border-[#E0E0E0] bg-white px-3 py-2 text-sm focus:outline-none focus:border-[#111] transition-colors';
-const LABEL_CLS = 'block text-xs font-semibold uppercase text-[#888] mb-1';
+type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo';
 
 // ─── Reusable components ──────────────────────────────────────────────────────
 
@@ -697,6 +696,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     { id: 'releases', label: 'Releases', icon: <Music size={16} /> },
     { id: 'artists', label: 'Artists', icon: <Users size={16} /> },
     { id: 'events', label: 'Events', icon: <Calendar size={16} /> },
+    { id: 'promo', label: 'Promo Pool', icon: <Send size={16} /> },
   ];
 
   return (
@@ -729,6 +729,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         {section === 'releases' && <ReleasesAdmin />}
         {section === 'artists' && <ArtistsAdmin />}
         {section === 'events' && <EventsAdmin />}
+        {section === 'promo' && <PromoAdmin />}
       </main>
     </div>
   );

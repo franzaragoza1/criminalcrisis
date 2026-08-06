@@ -79,6 +79,123 @@ export async function initDb() {
     )
   `);
 
+  // ---------------------------------------------------------------------------
+  // Promo pool
+  // ---------------------------------------------------------------------------
+
+  // The press/DJ mailing list. `status` doubles as the suppression list: anything
+  // other than 'active' is excluded from every send.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_contacts (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT,
+      role TEXT DEFAULT 'dj',
+      country TEXT,
+      company TEXT,
+      tags TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'active',
+      source TEXT DEFAULT 'manual',
+      unsub_token TEXT UNIQUE NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_campaigns (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      subject TEXT,
+      body_intro TEXT,
+      artwork_url TEXT,
+      release_id INTEGER REFERENCES releases(id) ON DELETE SET NULL,
+      status TEXT DEFAULT 'draft',
+      embargo_date TEXT,
+      download_enabled INTEGER DEFAULT 1,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_tracks (
+      id SERIAL PRIMARY KEY,
+      campaign_id INTEGER REFERENCES promo_campaigns(id) ON DELETE CASCADE,
+      position INTEGER DEFAULT 0,
+      title TEXT NOT NULL,
+      artist_name TEXT,
+      stream_public_id TEXT,
+      download_public_id TEXT,
+      download_format TEXT,
+      duration_seconds INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // One row per (campaign, contact). `access_token` is the per-person secret in
+  // the magic link — it is what makes every play/download attributable.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_recipients (
+      id SERIAL PRIMARY KEY,
+      campaign_id INTEGER REFERENCES promo_campaigns(id) ON DELETE CASCADE,
+      contact_id INTEGER REFERENCES promo_contacts(id) ON DELETE CASCADE,
+      access_token TEXT UNIQUE NOT NULL,
+      send_status TEXT DEFAULT 'queued',
+      provider_message_id TEXT,
+      error TEXT,
+      sent_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      opened_at TIMESTAMPTZ,
+      first_visit_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (campaign_id, contact_id)
+    )
+  `);
+
+  // Append-only activity log: visit | play | play_75 | complete | download | click
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_events (
+      id SERIAL PRIMARY KEY,
+      recipient_id INTEGER REFERENCES promo_recipients(id) ON DELETE CASCADE,
+      track_id INTEGER REFERENCES promo_tracks(id) ON DELETE SET NULL,
+      type TEXT NOT NULL,
+      meta TEXT DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // track_id NULL = feedback about the release as a whole
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_feedback (
+      id SERIAL PRIMARY KEY,
+      recipient_id INTEGER REFERENCES promo_recipients(id) ON DELETE CASCADE,
+      track_id INTEGER REFERENCES promo_tracks(id) ON DELETE CASCADE,
+      rating INTEGER,
+      will_play TEXT,
+      comment TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Postgres treats NULLs as distinct in a UNIQUE constraint, so the overall
+  // feedback row (track_id IS NULL) needs its own partial index to stay upsertable.
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS promo_feedback_track_uniq
+      ON promo_feedback (recipient_id, track_id) WHERE track_id IS NOT NULL
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS promo_feedback_overall_uniq
+      ON promo_feedback (recipient_id) WHERE track_id IS NULL
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS promo_events_recipient_idx ON promo_events (recipient_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS promo_recipients_queue_idx ON promo_recipients (send_status, campaign_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS promo_contacts_status_idx ON promo_contacts (status)`);
+
   // Safe migrations — add new columns if they don't exist yet
   await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);

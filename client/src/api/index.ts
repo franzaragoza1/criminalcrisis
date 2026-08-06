@@ -61,4 +61,91 @@ export const api = {
   // Admin - Hero
   updateHero: (data: FormData) =>
     request('/hero', { method: 'PUT', headers: authHeaders(), body: data }),
+
+  // --- Promo pool: public (token-gated, no login) ---
+  getPromo: (slug: string, k: string) =>
+    request(`/promo/${slug}?k=${encodeURIComponent(k)}`),
+  /** Fire-and-forget engagement beacon; never blocks or interrupts playback. */
+  trackPromoEvent: (slug: string, body: { k: string; type: string; track_id?: number }) =>
+    fetch(`${BASE}/promo/${slug}/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true,
+    }).catch(() => undefined),
+  promoDownloadUrl: (slug: string, trackId: number, k: string) =>
+    `${BASE}/promo/${slug}/download/${trackId}?k=${encodeURIComponent(k)}`,
+  sendPromoFeedback: (slug: string, body: object) =>
+    request(`/promo/${slug}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  promoSignup: (body: object) =>
+    request('/promo/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  // --- Promo pool: admin ---
+  getPromoContacts: (query = '') => request(`/promo/contacts${query}`, { headers: authHeaders() }),
+  getPromoContactStats: () => request('/promo/contacts/stats', { headers: authHeaders() }),
+  createPromoContact: (body: object) =>
+    request('/promo/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    }),
+  updatePromoContact: (id: number, body: object) =>
+    request(`/promo/contacts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    }),
+  deletePromoContact: (id: number) =>
+    request(`/promo/contacts/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  importPromoContacts: (data: FormData) =>
+    request('/promo/contacts/import', { method: 'POST', headers: authHeaders(), body: data }),
+  exportPromoContactsUrl: () => `${BASE}/promo/contacts/export.csv`,
+
+  getPromoCampaigns: () => request('/promo/campaigns', { headers: authHeaders() }),
+  createPromoCampaign: (data: FormData) =>
+    request('/promo/campaigns', { method: 'POST', headers: authHeaders(), body: data }),
+  updatePromoCampaign: (id: number, data: FormData) =>
+    request(`/promo/campaigns/${id}`, { method: 'PUT', headers: authHeaders(), body: data }),
+  deletePromoCampaign: (id: number) =>
+    request(`/promo/campaigns/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  addPromoTrack: (campaignId: number, data: FormData) =>
+    request(`/promo/campaigns/${campaignId}/tracks`, { method: 'POST', headers: authHeaders(), body: data }),
+  deletePromoTrack: (id: number) =>
+    request(`/promo/tracks/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  addPromoRecipients: (campaignId: number, body: object) =>
+    request(`/promo/campaigns/${campaignId}/recipients`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    }),
+  sendPromoCampaign: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  testPromoCampaign: (campaignId: number, email: string) =>
+    request(`/promo/campaigns/${campaignId}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ email }),
+    }),
+  getPromoStats: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/stats`, { headers: authHeaders() }),
 };
