@@ -25,6 +25,12 @@ export default function PromoLanding() {
   const [openDownload, setOpenDownload] = useState<number | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  // Mirrored in a ref so the timeupdate listener can read it without being
+  // rebound on every drag — otherwise the audio element fights the drag.
+  const draggingRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null);
   const overallRef = useRef<HTMLDivElement | null>(null);
   const scrollToOverall = () =>
     overallRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -118,7 +124,7 @@ export default function PromoLanding() {
     const onPause = () => setIsPlaying(false);
     const onMeta = () => setDuration(audio.duration || 0);
     const onTime = () => {
-      setProgress(audio.currentTime);
+      if (!draggingRef.current) setProgress(audio.currentTime);
       if (currentId && audio.duration && audio.currentTime / audio.duration >= 0.75) {
         beacon('play_75', currentId);
       }
@@ -143,12 +149,50 @@ export default function PromoLanding() {
     };
   }, [currentId, beacon, step]);
 
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+  // --- scrubbing -----------------------------------------------------------
+
+  const ratioAt = (clientX: number) => {
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return 0;
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  };
+
+  const seekToRatio = (ratio: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(duration) || duration <= 0) return;
+    audio.currentTime = ratio * duration;
+    setProgress(ratio * duration);
+  };
+
+  const onBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Capture so a drag keeps tracking even when the pointer leaves the bar.
+    e.currentTarget.setPointerCapture(e.pointerId);
+    draggingRef.current = true;
+    setDragging(true);
+    seekToRatio(ratioAt(e.clientX));
+  };
+
+  const onBarPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const ratio = ratioAt(e.clientX);
+    setHoverRatio(ratio);
+    if (dragging) seekToRatio(ratio);
+  };
+
+  const onBarPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    draggingRef.current = false;
+    setDragging(false);
+  };
+
+  const onBarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
     if (!audio || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    audio.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+    const step = e.shiftKey ? 30 : 5;
+    if (e.key === 'ArrowRight') { e.preventDefault(); seekToRatio(Math.min(1, (audio.currentTime + step) / duration)); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seekToRatio(Math.max(0, (audio.currentTime - step) / duration)); }
   };
+
+  const played = duration ? progress / duration : 0;
 
   const saveFeedback = async (
     trackId: number | null,
@@ -447,18 +491,54 @@ export default function PromoLanding() {
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className="fixed bottom-0 left-0 right-0 bg-[#111] text-[#FAFAFA] z-50"
           >
-            {/* The progress bar is the site's 4px rule, made live */}
+            {/* Scrubber. The visible bar is thin to keep the player calm, but
+                the grab area is 20px tall so it doesn't need aiming for. */}
             <div
-              onClick={seek}
-              className="h-1 bg-[#333] cursor-pointer group"
-              role="progressbar"
+              ref={barRef}
+              role="slider"
+              tabIndex={0}
+              aria-label="Seek"
+              aria-valuemin={0}
               aria-valuenow={Math.round(progress)}
               aria-valuemax={Math.round(duration) || 100}
+              aria-valuetext={`${fmtTime(progress)} of ${fmtTime(duration)}`}
+              onPointerDown={onBarPointerDown}
+              onPointerMove={onBarPointerMove}
+              onPointerUp={onBarPointerUp}
+              onPointerLeave={() => setHoverRatio(null)}
+              onKeyDown={onBarKeyDown}
+              className="group relative h-4 flex items-center cursor-pointer touch-none select-none focus:outline-none"
             >
-              <div
-                className="h-full bg-[#C8302B] group-hover:bg-[#FAFAFA] transition-colors"
-                style={{ width: duration ? `${(progress / duration) * 100}%` : '0%' }}
-              />
+              {/* Time under the cursor */}
+              {hoverRatio !== null && duration > 0 && (
+                <span
+                  className="pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 bg-[#FAFAFA] text-[#111] font-mono text-[10px] tabular-nums px-1.5 py-0.5 whitespace-nowrap"
+                  style={{ left: `${hoverRatio * 100}%` }}
+                >
+                  {fmtTime(hoverRatio * duration)}
+                </span>
+              )}
+
+              <div className={`relative w-full bg-[#333] transition-all ${dragging ? 'h-2.5' : 'h-1.5 group-hover:h-2.5 group-focus:h-2.5'}`}>
+                {/* Ghost fill showing where a click would land */}
+                {hoverRatio !== null && (
+                  <div
+                    className="absolute inset-y-0 left-0 bg-[#FAFAFA]/20"
+                    style={{ width: `${hoverRatio * 100}%` }}
+                  />
+                )}
+                <div
+                  className="absolute inset-y-0 left-0 bg-[#C8302B]"
+                  style={{ width: `${played * 100}%` }}
+                />
+                {/* Square handle, in keeping with the rest of the site */}
+                <div
+                  className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 bg-[#FAFAFA] transition-all ${
+                    dragging ? 'w-2.5 h-4' : 'w-2 h-3.5 opacity-0 group-hover:opacity-100 group-focus:opacity-100'
+                  }`}
+                  style={{ left: `${played * 100}%` }}
+                />
+              </div>
             </div>
 
             <div className="px-4 md:px-8 py-3 flex items-center gap-4">
