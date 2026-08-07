@@ -108,48 +108,50 @@ export function signedAudioStreamUrl(publicId: string): string {
 }
 
 /**
- * Time-limited download of the untouched original (the master a DJ actually
- * wants). `private_download_url` routes through Cloudinary's authenticated API
- * rather than the CDN, so the link genuinely stops working after `ttlSeconds` —
- * worth the slower first byte for a file people keep.
- *
- * Only works for originals: it cannot apply a transformation.
+ * Cloudinary puts this straight into the URL and into Content-Disposition, so
+ * strip anything that would break either. Keeps "Artist - Title" readable.
  */
-export function expiringAudioDownloadUrl(
-  publicId: string,
-  format: string,
-  ttlSeconds = 60 * 60 * 6
-): string {
-  return cloudinary.utils.private_download_url(publicId, format, {
-    resource_type: 'video',
-    type: 'authenticated',
-    expires_at: Math.floor(Date.now() / 1000) + ttlSeconds,
-  });
+export function attachmentFilename(raw: string): string {
+  return (
+    raw
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // fold accents rather than drop the letter
+      .replace(/[^a-zA-Z0-9 _-]/g, '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .slice(0, 80) || 'promo'
+  );
 }
 
 /**
- * Signed download of a *derived* file — used for the 320kbps MP3 when it's
- * transcoded from the master rather than uploaded separately.
+ * Signed download URL.
  *
- * `private_download_url` can't carry a transformation, so this builds a signed
- * delivery URL with `fl_attachment` instead. No built-in expiry, but the
- * signature can't be forged without our API secret and we only mint it after
- * the recipient's token checks out.
+ * Uses `fl_attachment:<filename>` rather than `private_download_url`, which was
+ * the original approach: that endpoint's path ends in `/download`, so browsers
+ * saved every file as "download.mp3" regardless of the track. The attachment
+ * flag names the file properly and works for originals and derivatives alike.
+ *
+ * The trade-off is that these URLs don't expire on their own — Cloudinary's
+ * expiring links can't carry a filename or a transformation on this plan. They
+ * still can't be forged without our API secret, and we only mint one after the
+ * recipient's access token checks out.
+ *
+ * Passing `bitRate` transcodes (the 320 derived from a master); omitting it
+ * delivers the original untouched, which is what a lossless download must do.
  */
 export function signedAudioAttachmentUrl(
   publicId: string,
-  options: { format?: string; bitRate?: string; filename?: string } = {}
+  options: { format: string; bitRate?: string; filename: string }
 ): string {
-  const { format = 'mp3', bitRate = '320k', filename } = options;
+  const { format, bitRate, filename } = options;
   return cloudinary.url(publicId, {
     resource_type: 'video',
     type: 'authenticated',
     sign_url: true,
     secure: true,
     format,
-    audio_codec: format === 'mp3' ? 'mp3' : undefined,
-    bit_rate: bitRate,
-    flags: filename ? `attachment:${filename}` : 'attachment',
+    ...(bitRate ? { audio_codec: 'mp3', bit_rate: bitRate } : {}),
+    flags: `attachment:${attachmentFilename(filename)}`,
   });
 }
 

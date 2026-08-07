@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send } from 'lucide-react';
+import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send, Menu } from 'lucide-react';
 import { api } from '../../api';
 import type { Artist, Release, Event } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
@@ -690,6 +690,7 @@ function HeroAdmin() {
 
 export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [section, setSection] = useState<Section>('releases');
+  const [navOpen, setNavOpen] = useState(false);
 
   const navItems: { id: Section; label: string; icon: React.ReactNode }[] = [
     { id: 'home', label: 'Homepage', icon: <Home size={16} /> },
@@ -699,17 +700,55 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     { id: 'promo', label: 'Promo Pool', icon: <Send size={16} /> },
   ];
 
+  const current = navItems.find(i => i.id === section);
+
   return (
-    <div className="min-h-screen bg-[#FAFAFA] flex">
-      <aside className="w-56 bg-[#111] text-white flex flex-col flex-shrink-0">
-        <div className="p-6 border-b border-white/10">
-          <p className="font-black text-sm tracking-tight" style={{ fontFamily: "'ABCCamera', 'Helvetica Neue', sans-serif" }}>CRIMINAL CRISIS</p>
-          <p className="text-xs text-white/40 mt-0.5">Admin</p>
+    <div className="min-h-screen bg-[#FAFAFA] md:flex">
+      {/* Mobile bar. The sidebar alone ate 224px of a 375px screen, which left
+          the forms and tables unusable on a phone. */}
+      <header className="md:hidden sticky top-0 z-30 flex items-center gap-3 bg-[#111] text-white px-4 py-3">
+        <button
+          onClick={() => setNavOpen(true)}
+          aria-label="Open menu"
+          className="p-1 -ml-1 cursor-pointer"
+        >
+          <Menu size={20} />
+        </button>
+        <p className="text-sm font-black tracking-tight" style={{ fontFamily: "'ABCCamera', 'Helvetica Neue', sans-serif" }}>
+          {current?.label ?? 'Admin'}
+        </p>
+      </header>
+
+      {navOpen && (
+        <div
+          onClick={() => setNavOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 z-40"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed md:sticky inset-y-0 left-0 top-0 z-50 w-56 h-screen bg-[#111] text-white flex flex-col flex-shrink-0
+                    transition-transform duration-300 md:transition-none
+                    ${navOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+      >
+        <div className="p-6 border-b border-white/10 flex items-start justify-between">
+          <div>
+            <p className="font-black text-sm tracking-tight" style={{ fontFamily: "'ABCCamera', 'Helvetica Neue', sans-serif" }}>CRIMINAL CRISIS</p>
+            <p className="text-xs text-white/40 mt-0.5">Admin</p>
+          </div>
+          <button
+            onClick={() => setNavOpen(false)}
+            aria-label="Close menu"
+            className="md:hidden text-white/50 hover:text-white cursor-pointer"
+          >
+            <X size={18} />
+          </button>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map(item => (
             <button
-              key={item.id} onClick={() => setSection(item.id)}
+              key={item.id} onClick={() => { setSection(item.id); setNavOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-left transition-colors cursor-pointer ${section === item.id ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'}`}
             >
               {item.icon} {item.label}
@@ -724,7 +763,8 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         </div>
       </aside>
 
-      <main className="flex-1 p-8 overflow-y-auto">
+      {/* min-w-0 stops wide tables from forcing the whole page to scroll sideways */}
+      <main className="flex-1 min-w-0 p-4 md:p-8 overflow-y-auto">
         {section === 'home' && <HeroAdmin />}
         {section === 'releases' && <ReleasesAdmin />}
         {section === 'artists' && <ArtistsAdmin />}

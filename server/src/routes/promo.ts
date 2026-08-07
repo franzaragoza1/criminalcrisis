@@ -10,7 +10,6 @@ import {
   uploadToCloudinary,
   uploadAudioToCloudinary,
   signedAudioStreamUrl,
-  expiringAudioDownloadUrl,
   signedAudioAttachmentUrl,
   deleteAudioFromCloudinary,
   LOSSLESS_FORMATS,
@@ -960,7 +959,7 @@ router.get('/:slug/download/:trackId', promoLimiter, async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT title, download_public_id, download_format, mp3_public_id
+      `SELECT title, artist_name, download_public_id, download_format, mp3_public_id
          FROM promo_tracks WHERE id = $1 AND campaign_id = $2`,
       [req.params.trackId, resolved.campaign.id]
     );
@@ -980,22 +979,24 @@ router.get('/:slug/download/:trackId', promoLimiter, async (req, res) => {
       [resolved.recipientId, req.params.trackId, JSON.stringify({ format: wants })]
     );
 
-    // Lossless goes out untouched via a genuinely expiring link. The 320 is a
-    // derivative, which private_download_url can't produce, so it uses a signed
-    // attachment URL instead.
+    // "Artist - Title", so a DJ's downloads folder stays readable.
+    const filename = [track.artist_name, track.title].filter(Boolean).join(' - ') || track.title;
+
+    // Lossless goes out untouched; the 320 is transcoded from the master unless
+    // one was uploaded by hand.
     if (wants === 'wav') {
-      res.redirect(302, expiringAudioDownloadUrl(track.download_public_id, masterFormat));
+      res.redirect(302, signedAudioAttachmentUrl(track.download_public_id, { format: masterFormat, filename }));
       return;
     }
     if (track.mp3_public_id) {
-      res.redirect(302, expiringAudioDownloadUrl(track.mp3_public_id, 'mp3'));
+      res.redirect(302, signedAudioAttachmentUrl(track.mp3_public_id, { format: 'mp3', filename }));
       return;
     }
     if (masterFormat === 'mp3') {
-      res.redirect(302, expiringAudioDownloadUrl(track.download_public_id, 'mp3'));
+      res.redirect(302, signedAudioAttachmentUrl(track.download_public_id, { format: 'mp3', filename }));
       return;
     }
-    res.redirect(302, signedAudioAttachmentUrl(track.download_public_id, { format: 'mp3', bitRate: '320k' }));
+    res.redirect(302, signedAudioAttachmentUrl(track.download_public_id, { format: 'mp3', bitRate: '320k', filename }));
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
