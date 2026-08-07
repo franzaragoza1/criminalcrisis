@@ -129,6 +129,12 @@ export const api = {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
     }),
+  reorderPromoTracks: (campaignId: number, ids: number[]) =>
+    request(`/promo/campaigns/${campaignId}/tracks/order`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ ids }),
+    }),
   addPromoRecipients: (campaignId: number, body: object) =>
     request(`/promo/campaigns/${campaignId}/recipients`, {
       method: 'POST',

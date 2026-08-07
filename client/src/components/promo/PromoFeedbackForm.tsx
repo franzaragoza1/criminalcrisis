@@ -147,7 +147,7 @@ export default function PromoFeedbackForm({
           onBlur={() => { if (commentDirty) void persist({ comment }); }}
           rows={2}
           maxLength={2000}
-          placeholder={required ? 'A line or two — this is what unlocks the downloads.' : 'Anything you want to tell us…'}
+          placeholder="Anything you want to tell us…"
           className="w-full bg-transparent border-0 border-b border-[#DDD] py-2 text-sm resize-none focus:outline-none transition-colors text-[#111] placeholder:text-[#C0BABC] focus:border-[#111]"
         />
       </div>

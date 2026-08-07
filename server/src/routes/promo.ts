@@ -388,7 +388,14 @@ router.post(
       const mp3 = files?.mp3?.[0];
       if (!master) { res.status(400).json({ error: 'A master audio file is required' }); return; }
 
-      const { title, artist_name, position } = req.body;
+      const { title, artist_name } = req.body;
+
+      // Append to the end. Relying on a client-supplied position meant every
+      // track landed at 0 and the list fell back to insertion order.
+      const { rows: last } = await pool.query(
+        `SELECT COALESCE(MAX(position) + 1, 0) AS next FROM promo_tracks WHERE campaign_id = $1`,
+        [req.params.id]
+      );
 
       // The eager 128k transcode happens here so the first listener isn't the
       // one waiting for it.
@@ -400,7 +407,7 @@ router.post(
               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
         [
           req.params.id,
-          position ? Number(position) : 0,
+          last[0].next,
           title || master.originalname.replace(/\.[^.]+$/, ''),
           artist_name || null,
           uploaded.publicId,
@@ -422,6 +429,37 @@ router.post(
     }
   }
 );
+
+/**
+ * Reorders a campaign's tracks. Takes the full list of ids in the order they
+ * should appear and rewrites every position, rather than swapping pairs — that
+ * way a list that somehow drifted out of sync gets normalised on any change.
+ */
+router.put('/campaigns/:id/tracks/order', authMiddleware, async (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.some(id => !Number.isInteger(Number(id)))) {
+    res.status(400).json({ error: 'ids must be an array of track ids' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < ids.length; i++) {
+      await client.query(
+        `UPDATE promo_tracks SET position = $1 WHERE id = $2 AND campaign_id = $3`,
+        [i, Number(ids[i]), req.params.id]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
 
 router.delete('/tracks/:id', authMiddleware, async (req, res) => {
   try {

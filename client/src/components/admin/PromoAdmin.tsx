@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -330,6 +331,22 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
     } catch (e2) { err(e2); } finally { setBusy(false); }
   };
 
+  /** Sends the whole reordered list, so positions are normalised every time. */
+  const move = async (index: number, delta: number) => {
+    const list = stats?.perTrack ?? [];
+    const target = index + delta;
+    if (target < 0 || target >= list.length) return;
+
+    const ids = list.map(t => t.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+
+    setBusy(true);
+    try {
+      await api.reorderPromoTracks(campaign.id, ids);
+      refresh();
+    } catch (e) { err(e); } finally { setBusy(false); }
+  };
+
   const addRecipients = async () => {
     setBusy(true);
     try {
@@ -389,29 +406,42 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
           {/* Tracks */}
           <div className="border border-[#E0E0E0] bg-white p-5">
             <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2"><Music size={14} /> Tracks</h3>
-            <p className="text-xs text-[#888] mb-2">
-              Upload the master once. The 128kbps stream and the 320 MP3 download are both derived
-              from it, so recipients can choose their format. Upload your own 320 only if you'd
-              rather control the encode yourself.
-            </p>
-            <p className="text-xs text-[#888] mb-4">
-              <strong className="text-[#C8302B]">Max 100MB per file</strong> on Cloudinary's free plan.
-              Export masters as <strong className="text-[#111]">FLAC</strong> — lossless, about half
-              the size of WAV, and read by Rekordbox, Serato and Traktor. A 24-bit/48kHz WAV only
-              fits up to roughly 6 minutes.
+            <p className="text-xs text-[#888] mb-4 max-w-2xl leading-relaxed">
+              Upload the master once — the 128kbps stream and the 320 download are derived from it.
+              <strong className="text-[#C8302B]"> Max 100MB per file</strong>, so prefer
+              <strong className="text-[#111]"> FLAC</strong> over WAV: lossless, half the size, read
+              by Rekordbox, Serato and Traktor. Use the arrows to reorder.
             </p>
 
             {stats?.perTrack.map((tr, i) => (
-              <div key={tr.id} className="flex items-center gap-3 py-2 border-b border-[#F0F0F0] last:border-0">
-                <span className="font-mono text-xs text-[#BBB] w-6">{String(i + 1).padStart(2, '0')}</span>
-                <span className="flex-1 text-sm text-[#111]">{tr.title}</span>
-                <span className="text-xs text-[#888]">{tr.plays} plays · {tr.downloads} dl</span>
+              <div key={tr.id} className="flex items-center gap-2 sm:gap-3 py-2 border-b border-[#F0F0F0] last:border-0">
+                <span className="font-mono text-xs text-[#BBB] w-6 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+
+                {/* Arrows rather than drag-and-drop: no scroll-vs-drag fight on
+                    touch, and it stays keyboard-reachable. */}
+                <div className="flex flex-col shrink-0">
+                  <button
+                    onClick={() => void move(i, -1)}
+                    disabled={i === 0 || busy}
+                    aria-label={`Move "${tr.title}" up`}
+                    className="text-[#BBB] hover:text-[#111] disabled:opacity-25 disabled:hover:text-[#BBB] cursor-pointer disabled:cursor-not-allowed transition-colors leading-none"
+                  ><ChevronUp size={14} /></button>
+                  <button
+                    onClick={() => void move(i, 1)}
+                    disabled={i === (stats?.perTrack.length ?? 0) - 1 || busy}
+                    aria-label={`Move "${tr.title}" down`}
+                    className="text-[#BBB] hover:text-[#111] disabled:opacity-25 disabled:hover:text-[#BBB] cursor-pointer disabled:cursor-not-allowed transition-colors leading-none"
+                  ><ChevronDown size={14} /></button>
+                </div>
+
+                <span className="flex-1 min-w-0 text-sm text-[#111] truncate">{tr.title}</span>
+                <span className="text-xs text-[#888] shrink-0 hidden sm:block">{tr.plays} plays · {tr.downloads} dl</span>
                 <button
                   onClick={async () => {
                     if (!confirm(`Delete "${tr.title}"?`)) return;
                     try { await api.deletePromoTrack(tr.id); refresh(); } catch (e) { err(e); }
                   }}
-                  className="text-[#BBB] hover:text-[#C8302B] cursor-pointer transition-colors"
+                  className="text-[#BBB] hover:text-[#C8302B] cursor-pointer transition-colors shrink-0"
                 ><Trash2 size={14} /></button>
               </div>
             ))}
