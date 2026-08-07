@@ -484,22 +484,31 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
               <div className="space-y-4">
                 {stats.feedback.map((f, i) => (
                   <div key={i} className="border-b border-[#F0F0F0] last:border-0 pb-4 last:pb-0">
+                    {/* Name and email both, always. Showing one or the other made
+                        feedback look anonymous whenever a name was present. */}
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
+                      {f.name && <span className="text-sm font-semibold text-[#111]">{f.name}</span>}
+                      <a href={`mailto:${f.email}`} className="text-xs text-[#666] hover:text-[#C8302B] transition-colors">
+                        {f.email}
+                      </a>
+                      {f.company && <span className="text-xs text-[#888]">· {f.company}</span>}
+                      {f.country && <span className="text-xs text-[#888]">· {f.country}</span>}
+                      {f.source === 'test' && (
+                        <span className="text-[9px] font-semibold uppercase tracking-wide bg-[#F0F0F0] px-1.5 py-0.5 text-[#999]">test</span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                      <span className="text-sm font-semibold text-[#111]">{f.name || f.email}</span>
-                      {f.company && <span className="text-xs text-[#888]">{f.company}</span>}
-                      {f.track_title && <span className="text-[10px] uppercase tracking-wide bg-[#F0F0F0] px-2 py-0.5 text-[#666]">{f.track_title}</span>}
-                      {f.rating != null && <span className="text-xs font-mono text-[#C8302B]">{'★'.repeat(f.rating)}<span className="text-[#DDD]">{'★'.repeat(5 - f.rating)}</span></span>}
+                      {f.rating != null && (
+                        <span className="text-xs font-mono text-[#C8302B]">
+                          {'★'.repeat(f.rating)}<span className="text-[#DDD]">{'★'.repeat(5 - f.rating)}</span>
+                        </span>
+                      )}
                       {f.favourite_track_title && (
                         <span className="text-[10px] uppercase tracking-wide text-[#888]">
                           fave: <span className="text-[#111]">{f.favourite_track_title}</span>
                         </span>
                       )}
-                      {f.will_play && (
-                        <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 ${
-                          f.will_play === 'yes' ? 'bg-[#111] text-white' : f.will_play === 'maybe' ? 'bg-[#E8E8E8] text-[#666]' : 'bg-[#F0F0F0] text-[#999]'}`}>
-                          {f.will_play === 'yes' ? 'Will play' : f.will_play === 'maybe' ? 'Maybe' : 'Won’t play'}
-                        </span>
-                      )}
+                      {f.track_title && <span className="text-[10px] uppercase tracking-wide bg-[#F0F0F0] px-2 py-0.5 text-[#666]">{f.track_title}</span>}
                     </div>
                     {f.comment && <p className="text-sm text-[#444] leading-relaxed">{f.comment}</p>}
                   </div>
@@ -522,7 +531,13 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                 {stats?.recipients.map(r => (
                   <tr key={r.id} className="border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA]">
                     <td className="px-4 py-2.5">
-                      <span className="text-[#111]">{r.name || r.email}</span>
+                      <span className="text-[#111] flex items-center gap-1.5">
+                        {r.name || r.email}
+                        {r.source === 'test' && (
+                          <span className="text-[9px] font-semibold uppercase tracking-wide bg-[#F0F0F0] px-1.5 py-0.5 text-[#999]">test</span>
+                        )}
+                      </span>
+                      {r.name && <span className="text-xs text-[#888] block">{r.email}</span>}
                       {r.company && <span className="text-xs text-[#888] block">{r.company}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs uppercase text-[#666]">{r.send_status}</td>

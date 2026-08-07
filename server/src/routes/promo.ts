@@ -579,7 +579,7 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
 
     const { rows: recipients } = await pool.query(
       `SELECT r.id, r.send_status, r.sent_at, r.delivered_at, r.opened_at, r.first_visit_at, r.error,
-              c.email, c.name, c.role, c.company, c.country,
+              c.email, c.name, c.role, c.company, c.country, c.source,
               (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'play')     AS plays,
               (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'download') AS downloads,
               (SELECT COUNT(*)::int FROM promo_feedback f WHERE f.recipient_id = r.id)                       AS feedback_count
@@ -591,8 +591,8 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
     );
 
     const { rows: feedback } = await pool.query(
-      `SELECT f.rating, f.will_play, f.comment, f.created_at,
-              c.name, c.email, c.company,
+      `SELECT f.rating, f.comment, f.created_at,
+              c.name, c.email, c.company, c.country, c.role, c.source,
               t.title AS track_title, fav.title AS favourite_track_title
          FROM promo_feedback f
          JOIN promo_recipients r ON r.id = f.recipient_id

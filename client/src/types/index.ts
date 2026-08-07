@@ -46,7 +46,6 @@ export interface HeroContent {
 // --- Promo pool ------------------------------------------------------------
 
 export type ContactStatus = 'active' | 'unsubscribed' | 'bounced' | 'complained';
-export type WillPlay = 'yes' | 'maybe' | 'no';
 
 export interface PromoContact {
   id: number;
@@ -98,7 +97,6 @@ export interface PromoTrack {
 export interface PromoFeedbackEntry {
   track_id: number | null;
   rating?: number | null;
-  will_play?: WillPlay | null;
   comment?: string | null;
   favourite_track_id?: number | null;
 }
@@ -127,13 +125,15 @@ export interface PromoStats {
     visited: number; played: number; downloaded: number; feedback: number;
   };
   recipients: Array<{
-    id: number; email: string; name?: string; role?: string; company?: string; country?: string;
+    id: number; email: string; name?: string; role?: string; company?: string;
+    country?: string; source?: string;
     send_status: string; sent_at?: string; delivered_at?: string; first_visit_at?: string;
     error?: string; plays: number; downloads: number; feedback_count: number;
   }>;
   feedback: Array<{
-    rating?: number; will_play?: WillPlay; comment?: string; created_at: string;
-    name?: string; email: string; company?: string;
+    rating?: number; comment?: string; created_at: string;
+    name?: string; email: string; company?: string; country?: string;
+    role?: string; source?: string;
     track_title?: string; favourite_track_title?: string;
   }>;
   perTrack: Array<{

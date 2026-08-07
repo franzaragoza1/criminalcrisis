@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Download, ChevronDown, Check, SkipBack, SkipForward, Lock } from 'lucide-react';
+import { Play, Pause, Download, Check, SkipBack, SkipForward, Lock } from 'lucide-react';
 import { api } from '../../api';
-import type { PromoView, PromoFeedbackEntry, WillPlay } from '../../types';
+import type { PromoView, PromoFeedbackEntry } from '../../types';
 import PromoFeedbackForm from './PromoFeedbackForm';
 
 const fmtTime = (s: number) => {
@@ -21,7 +21,6 @@ export default function PromoLanding() {
   // A missing key is derived, not stored — there is nothing to fetch without it.
   const error = !token ? 'This link is missing its access key.' : fetchError;
   const [feedback, setFeedback] = useState<Record<string, PromoFeedbackEntry>>({});
-  const [openFeedback, setOpenFeedback] = useState<number | 'overall' | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [openDownload, setOpenDownload] = useState<number | null>(null);
 
@@ -153,7 +152,7 @@ export default function PromoLanding() {
 
   const saveFeedback = async (
     trackId: number | null,
-    body: { rating?: number; will_play?: WillPlay; comment?: string; favourite_track_id?: number }
+    body: { rating?: number; comment?: string; favourite_track_id?: number }
   ) => {
     const res = (await api.sendPromoFeedback(slug, { k: token, track_id: trackId, ...body })) as {
       downloadsUnlocked?: boolean;
@@ -291,7 +290,7 @@ export default function PromoLanding() {
               </p>
               {campaign.download_enabled && campaign.require_feedback && !unlocked && (
                 <button
-                  onClick={() => { setOpenFeedback('overall'); scrollToOverall(); }}
+                  onClick={() => { scrollToOverall(); }}
                   className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.15em] uppercase text-[#C8302B] hover:underline cursor-pointer"
                 >
                   <Lock size={11} /> Rate to unlock downloads
@@ -301,8 +300,6 @@ export default function PromoLanding() {
             <div className="border-t-2 border-[#111]">
               {tracks.map((track, i) => {
                 const active = track.id === currentId;
-                const saved = feedback[String(track.id)];
-                const isOpen = openFeedback === track.id;
 
                 return (
                   <motion.div
@@ -347,22 +344,11 @@ export default function PromoLanding() {
                         {fmtTime(track.duration_seconds ?? NaN)}
                       </span>
 
-                      <button
-                        onClick={() => setOpenFeedback(isOpen ? null : track.id)}
-                        className={`shrink-0 flex items-center gap-1 text-[10px] font-semibold tracking-[0.15em] uppercase px-2.5 py-2 transition-colors cursor-pointer ${
-                          active ? 'text-[#AAA] hover:text-[#FAFAFA]' : 'text-[#888] hover:text-[#111]'
-                        }`}
-                      >
-                        {saved ? <Check size={12} className="text-[#C8302B]" /> : null}
-                        <span className="hidden sm:inline">Feedback</span>
-                        <ChevronDown size={13} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                      </button>
-
                       {campaign.download_enabled && track.download_formats.length > 0 && (
                         <div className="relative shrink-0">
                           <button
                             onClick={() => {
-                              if (!unlocked) { setOpenFeedback('overall'); scrollToOverall(); return; }
+                              if (!unlocked) { scrollToOverall(); return; }
                               setOpenDownload(openDownload === track.id ? null : track.id);
                             }}
                             aria-label={unlocked ? `Download ${track.title}` : 'Rate the release to unlock downloads'}
@@ -405,26 +391,6 @@ export default function PromoLanding() {
                         </div>
                       )}
                     </div>
-
-                    <AnimatePresence initial={false}>
-                      {isOpen && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                          className="overflow-hidden"
-                        >
-                          <div className={`px-3 md:px-4 pb-6 pt-1 ${active ? 'text-[#FAFAFA]' : ''}`}>
-                            <PromoFeedbackForm
-                              dark={active}
-                              initial={saved}
-                              onSave={body => saveFeedback(track.id, body)}
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </motion.div>
                 );
               })}
@@ -455,7 +421,8 @@ export default function PromoLanding() {
               <PromoFeedbackForm
                 initial={feedback['overall']}
                 onSave={body => saveFeedback(null, body)}
-                tracks={tracks}
+                // Picking a favourite from one track is a non-question.
+                tracks={tracks.length > 1 ? tracks : undefined}
               />
             </div>
 
