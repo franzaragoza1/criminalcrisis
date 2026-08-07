@@ -609,6 +609,44 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * A working link to the landing page for the admin's own eyes.
+ *
+ * The page is unviewable without a recipient token by design, so previewing
+ * needs a real recipient. It hangs off a fixed contact on the `.invalid` TLD —
+ * reserved by RFC 2606 and guaranteed never to resolve, so it can't be mailed
+ * even by accident — and carries source='test', which keeps it out of every
+ * recipient selection.
+ */
+router.get('/campaigns/:id/preview', authMiddleware, async (req, res) => {
+  try {
+    const { rows: campaignRows } = await pool.query(
+      'SELECT slug FROM promo_campaigns WHERE id = $1', [req.params.id]
+    );
+    if (campaignRows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const contact = await pool.query(
+      `INSERT INTO promo_contacts (email, name, role, status, source, unsub_token)
+            VALUES ('preview@promo.invalid', 'Preview', 'test', 'rejected', 'test', $1)
+       ON CONFLICT (email) DO UPDATE SET updated_at = NOW()
+         RETURNING id`,
+      [newToken()]
+    );
+
+    const recipient = await pool.query(
+      `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status)
+            VALUES ($1, $2, $3, 'skipped')
+       ON CONFLICT (campaign_id, contact_id) DO UPDATE SET campaign_id = EXCLUDED.campaign_id
+         RETURNING access_token`,
+      [req.params.id, contact.rows[0].id, newToken()]
+    );
+
+    res.json({ url: promoUrlFor(campaignRows[0].slug, recipient.rows[0].access_token) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /** The dashboard the distro never gave you: per-contact engagement. */
 router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
   try {

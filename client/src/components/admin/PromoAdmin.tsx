@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
-  ChevronUp, ChevronDown, Edit3,
+  ChevronUp, ChevronDown, Edit3, Eye,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -340,6 +340,20 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
     } catch (e2) { err(e2); } finally { setBusy(false); }
   };
 
+  /**
+   * Opened via window.open before the await so the browser still counts it as a
+   * user gesture — doing it after the fetch resolves gets it blocked as a popup.
+   */
+  const preview = async () => {
+    const tab = window.open('', '_blank');
+    setBusy(true);
+    try {
+      const { url } = await api.getPromoPreviewUrl(campaign.id);
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    } catch (e) { tab?.close(); err(e); } finally { setBusy(false); }
+  };
+
   const saveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     const formEl = e.target as HTMLFormElement;
@@ -422,7 +436,15 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
             /promo/{campaign.slug} · <span className="uppercase font-semibold">{stats?.campaign?.status ?? campaign.status}</span>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void preview()}
+            disabled={busy}
+            title="Opens the landing page exactly as a recipient sees it"
+            className={`${BTN_SECONDARY} inline-flex items-center gap-2 !py-2 !text-xs`}
+          >
+            <Eye size={14} /> Preview
+          </button>
           {(['setup', 'stats'] as const).map(v => (
             <button key={v} onClick={() => setView(v)}
               className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors cursor-pointer ${
@@ -501,7 +523,8 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
               {/* The slug is deliberately frozen: renaming a sent campaign would
                   break every personal link already in someone's inbox. */}
               <span className="text-xs text-[#888]">
-                Link stays <code className="bg-[#F0F0F0] px-1">/promo/{campaign.slug}</code> even if you rename it
+                Each recipient gets <code className="bg-[#F0F0F0] px-1">/promo/{campaign.slug}?k=…</code> with
+                their own key — use Preview to see it. The link survives a rename.
               </span>
             </div>
           </form>

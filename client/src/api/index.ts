@@ -154,4 +154,6 @@ export const api = {
     }),
   getPromoStats: (campaignId: number) =>
     request(`/promo/campaigns/${campaignId}/stats`, { headers: authHeaders() }),
+  getPromoPreviewUrl: (campaignId: number) =>
+    request<{ url: string }>(`/promo/campaigns/${campaignId}/preview`, { headers: authHeaders() }),
 };
