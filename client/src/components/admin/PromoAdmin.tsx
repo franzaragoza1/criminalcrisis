@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Edit3,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -296,6 +296,15 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
   const [busy, setBusy] = useState(false);
   const [trackForm, setTrackForm] = useState({ title: '', artist_name: '' });
   const [roles, setRoles] = useState<string[]>([]);
+  const [details, setDetails] = useState({
+    title: campaign.title,
+    subject: campaign.subject ?? '',
+    body_intro: campaign.body_intro ?? '',
+    release_date: campaign.release_date ?? '',
+    download_enabled: campaign.download_enabled !== 0,
+    require_feedback: campaign.require_feedback !== 0,
+  });
+  const [savedDetails, setSavedDetails] = useState(false);
   const [reload, setReload] = useState(0);
   const refresh = () => setReload(n => n + 1);
 
@@ -327,6 +336,28 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
       await api.addPromoTrack(campaign.id, fd);
       setTrackForm({ title: '', artist_name: '' });
       formEl.reset();
+      refresh();
+    } catch (e2) { err(e2); } finally { setBusy(false); }
+  };
+
+  const saveDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const formEl = e.target as HTMLFormElement;
+    const artwork = (formEl.elements.namedItem('artwork') as HTMLInputElement)?.files?.[0];
+
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('title', details.title);
+      fd.append('subject', details.subject);
+      fd.append('body_intro', details.body_intro);
+      fd.append('release_date', details.release_date);
+      fd.append('download_enabled', details.download_enabled ? '1' : '0');
+      fd.append('require_feedback', details.require_feedback ? '1' : '0');
+      if (artwork) fd.append('artwork', artwork);
+      await api.updatePromoCampaign(campaign.id, fd);
+      setSavedDetails(true);
+      setTimeout(() => setSavedDetails(false), 2500);
       refresh();
     } catch (e2) { err(e2); } finally { setBusy(false); }
   };
@@ -385,9 +416,10 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
 
       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-[#111]">{campaign.title}</h2>
+          {/* From stats, not the prop, so a rename shows immediately after saving */}
+          <h2 className="text-xl font-bold text-[#111]">{stats?.campaign?.title ?? campaign.title}</h2>
           <p className="text-xs text-[#888] mt-1">
-            /promo/{campaign.slug} · <span className="uppercase font-semibold">{campaign.status}</span>
+            /promo/{campaign.slug} · <span className="uppercase font-semibold">{stats?.campaign?.status ?? campaign.status}</span>
           </p>
         </div>
         <div className="flex gap-2">
@@ -403,6 +435,77 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
 
       {view === 'setup' ? (
         <div className="space-y-6">
+          {/* Campaign details */}
+          <form onSubmit={saveDetails} className="border border-[#E0E0E0] bg-white p-5 space-y-4">
+            <h3 className="text-sm font-bold text-[#111] flex items-center gap-2"><Edit3 size={14} /> Campaign</h3>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className={LABEL_CLS}>Title</label>
+                <input required value={details.title}
+                       onChange={e => setDetails({ ...details, title: e.target.value })}
+                       className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Email subject</label>
+                <input value={details.subject}
+                       onChange={e => setDetails({ ...details, subject: e.target.value })}
+                       placeholder="Defaults to the title" className={INPUT_CLS} />
+              </div>
+            </div>
+
+            <div>
+              <label className={LABEL_CLS}>Intro / press note</label>
+              <textarea rows={4} value={details.body_intro}
+                        onChange={e => setDetails({ ...details, body_intro: e.target.value })}
+                        className={INPUT_CLS}
+                        placeholder="Shown in both the email and the landing page. Blank lines separate paragraphs." />
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className={LABEL_CLS}>Release date</label>
+                <input value={details.release_date}
+                       onChange={e => setDetails({ ...details, release_date: e.target.value })}
+                       placeholder="e.g. 12 September 2026" className={INPUT_CLS} />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Replace artwork</label>
+                <input name="artwork" type="file" accept="image/*" className="text-sm text-[#888]" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[#555]">
+                <input type="checkbox" checked={details.download_enabled}
+                       onChange={e => setDetails({ ...details, download_enabled: e.target.checked })} />
+                Allow downloads
+              </label>
+              <label className="flex items-center gap-2 text-sm text-[#555]">
+                <input type="checkbox" checked={details.require_feedback}
+                       disabled={!details.download_enabled}
+                       onChange={e => setDetails({ ...details, require_feedback: e.target.checked })} />
+                Require a star rating <em>and</em> a comment before downloading
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <button type="submit" disabled={busy} className={BTN_PRIMARY}>
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+              {savedDetails && (
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#C8302B]">
+                  <CheckCircle2 size={13} /> Saved
+                </span>
+              )}
+              {/* The slug is deliberately frozen: renaming a sent campaign would
+                  break every personal link already in someone's inbox. */}
+              <span className="text-xs text-[#888]">
+                Link stays <code className="bg-[#F0F0F0] px-1">/promo/{campaign.slug}</code> even if you rename it
+              </span>
+            </div>
+          </form>
+
           {/* Tracks */}
           <div className="border border-[#E0E0E0] bg-white p-5">
             <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2"><Music size={14} /> Tracks</h3>
