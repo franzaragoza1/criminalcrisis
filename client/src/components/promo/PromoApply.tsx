@@ -24,7 +24,7 @@ const labelClass =
  */
 export default function PromoApply() {
   const [form, setForm] = useState({
-    name: '', email: '', role: 'dj', country: '', company: '', notes: '',
+    name: '', email: '', role: 'dj', country: '', company: '',
   });
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [error, setError] = useState('');
@@ -89,14 +89,9 @@ export default function PromoApply() {
           <p className="text-[10px] font-semibold tracking-[0.3em] uppercase text-[#C0BABC] mb-4">
             By request only
           </p>
-          <h1 className="text-4xl md:text-5xl leading-[0.95] text-[#111] mb-6">
+          <h1 className="text-4xl md:text-5xl leading-[0.95] text-[#111] mb-12">
             Request to join<br />the promo pool
           </h1>
-          <p className="text-[15px] leading-relaxed text-[#444] mb-12 max-w-md">
-            We send unreleased music to a small list of DJs, radio and press who actually
-            play it. The list is curated, so tell us where you play or write — that's what
-            we go on.
-          </p>
         </motion.div>
 
         <form onSubmit={submit} className="space-y-8">
@@ -166,18 +161,6 @@ export default function PromoApply() {
                 placeholder="Optional"
               />
             </div>
-          </div>
-
-          <div>
-            <label className={labelClass}>Where do you play or write?</label>
-            <textarea
-              rows={4}
-              maxLength={1000}
-              value={form.notes}
-              onChange={e => setForm({ ...form, notes: e.target.value })}
-              className={`${inputClass} resize-none`}
-              placeholder="Links to your show, mixes, charts or writing. This is what we actually read."
-            />
           </div>
 
           {status === 'error' && (
