@@ -784,21 +784,31 @@ router.get('/unsubscribe/:token', async (req, res) => {
   res.redirect(302, `${siteUrl()}/unsubscribe/${req.params.token}${email ? `?e=${encodeURIComponent(email)}` : ''}`);
 });
 
-/** Public "get on the promo list" form. */
+/**
+ * Public "request to join the promo pool" form.
+ *
+ * Requests land as `pending`, never `active` — the recipient query only ever
+ * picks up active contacts, so nothing reaches a send until it's approved by
+ * hand. That's the point: the list stays curated rather than open.
+ */
 router.post('/signup', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'promo-signup' }), async (req, res) => {
   try {
-    const { email, name, role, country, company } = req.body;
+    const { email, name, role, country, company, notes } = req.body;
     if (!isEmail(String(email || ''))) { res.status(400).json({ error: 'Valid email required' }); return; }
 
     await pool.query(
-      `INSERT INTO promo_contacts (email, name, role, country, company, source, unsub_token)
-            VALUES ($1,$2,$3,$4,$5,'signup',$6)
+      `INSERT INTO promo_contacts (email, name, role, country, company, notes, status, source, unsub_token)
+            VALUES ($1,$2,$3,$4,$5,$6,'pending','request',$7)
        ON CONFLICT (email) DO UPDATE
               SET name    = COALESCE(NULLIF(EXCLUDED.name, ''), promo_contacts.name),
                   company = COALESCE(NULLIF(EXCLUDED.company, ''), promo_contacts.company),
+                  country = COALESCE(NULLIF(EXCLUDED.country, ''), promo_contacts.country),
+                  notes   = COALESCE(NULLIF(EXCLUDED.notes, ''), promo_contacts.notes),
                   updated_at = NOW()`,
+      // status is deliberately absent from the DO UPDATE: someone already on the
+      // list who fills the form again must not be knocked back to pending.
       [String(email).toLowerCase(), name || null, (role || 'dj').toLowerCase(),
-       country || null, company || null, newToken()]
+       country || null, company || null, notes ? String(notes).slice(0, 1000) : null, newToken()]
     );
     res.json({ ok: true });
   } catch (e: any) {

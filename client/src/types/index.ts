@@ -45,7 +45,13 @@ export interface HeroContent {
 
 // --- Promo pool ------------------------------------------------------------
 
-export type ContactStatus = 'active' | 'unsubscribed' | 'bounced' | 'complained';
+export type ContactStatus =
+  | 'pending'      // requested access, not yet approved — excluded from all sends
+  | 'active'
+  | 'rejected'
+  | 'unsubscribed'
+  | 'bounced'
+  | 'complained';
 
 export interface PromoContact {
   id: number;

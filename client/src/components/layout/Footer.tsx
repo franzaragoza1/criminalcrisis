@@ -41,6 +41,12 @@ export default function Footer() {
           >
             Bandcamp
           </a>
+          <a
+            href="/promo"
+            className="text-[10px] font-medium tracking-[0.15em] uppercase text-[#111] border-b border-[#111] hover:text-[#C8302B] hover:border-[#C8302B] transition-colors"
+          >
+            Promo Pool
+          </a>
         </div>
 
         <p className="text-[10px] tracking-wide text-[#C0BABC]">

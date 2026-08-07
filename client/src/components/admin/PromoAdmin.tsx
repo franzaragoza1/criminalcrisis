@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
-  Users, CheckCircle2, AlertTriangle, Music, RefreshCw,
+  Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -86,13 +86,38 @@ function ContactsTab() {
   };
 
   const active = stats?.byStatus?.active ?? 0;
+  const pending = stats?.byStatus?.pending ?? 0;
+
+  const setStatus = async (c: PromoContact, status: string) => {
+    try { await api.updatePromoContact(c.id, { status }); refresh(); } catch (e) { err(e); }
+  };
 
   return (
     <div>
+      {/* Pending requests come first — they're the only thing here that needs
+          a decision, and they're invisible to sends until approved. */}
+      {pending > 0 && (
+        <button
+          onClick={() => setStatusFilter('pending')}
+          className={`w-full flex items-center gap-3 border-2 p-4 mb-4 text-left cursor-pointer transition-colors ${
+            statusFilter === 'pending' ? 'border-[#C8302B] bg-[#FFF5F5]' : 'border-[#111] bg-white hover:bg-[#FAFAFA]'
+          }`}
+        >
+          <UserPlus size={18} className="text-[#C8302B] shrink-0" />
+          <span className="text-sm text-[#111]">
+            <strong>{pending}</strong> {pending === 1 ? 'request' : 'requests'} to join waiting for review
+          </span>
+          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-[#888]">
+            {statusFilter === 'pending' ? 'showing' : 'review →'}
+          </span>
+        </button>
+      )}
+
       {/* Health summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
         {[
           { label: 'Active', value: active, tone: 'text-[#111]' },
+          { label: 'Pending', value: pending, tone: pending > 0 ? 'text-[#C8302B]' : 'text-[#888]' },
           { label: 'Unsubscribed', value: stats?.byStatus?.unsubscribed ?? 0, tone: 'text-[#888]' },
           { label: 'Bounced', value: stats?.byStatus?.bounced ?? 0, tone: 'text-[#C8302B]' },
           { label: 'Complaints', value: stats?.byStatus?.complained ?? 0, tone: 'text-[#C8302B]' },
@@ -135,7 +160,9 @@ function ContactsTab() {
         />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={`${INPUT_CLS} max-w-[180px]`}>
           <option value="">All statuses</option>
+          <option value="pending">Pending requests</option>
           <option value="active">Active</option>
+          <option value="rejected">Rejected</option>
           <option value="unsubscribed">Unsubscribed</option>
           <option value="bounced">Bounced</option>
           <option value="complained">Complained</option>
@@ -193,29 +220,59 @@ function ContactsTab() {
           </thead>
           <tbody>
             {contacts.map(c => (
-              <tr key={c.id} className="border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA]">
-                <td className="px-4 py-2.5 text-[#111]">{c.email}</td>
-                <td className="px-4 py-2.5 text-[#555]">{c.name || '—'}</td>
-                <td className="px-4 py-2.5 text-[#555] uppercase text-xs">{c.role}</td>
-                <td className="px-4 py-2.5 text-[#555]">{c.company || '—'}</td>
-                <td className="px-4 py-2.5 text-[#555]">{c.country || '—'}</td>
-                <td className="px-4 py-2.5">
-                  <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 ${
-                    c.status === 'active' ? 'bg-[#111] text-white'
-                      : c.status === 'unsubscribed' ? 'bg-[#E8E8E8] text-[#666]'
-                      : 'bg-[#C8302B] text-white'
-                  }`}>{c.status}</span>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <button
-                    onClick={async () => {
-                      if (!confirm(`Delete ${c.email}?`)) return;
-                      try { await api.deletePromoContact(c.id); refresh(); } catch (e) { err(e); }
-                    }}
-                    className="text-[#BBB] hover:text-[#C8302B] transition-colors cursor-pointer"
-                  ><Trash2 size={14} /></button>
-                </td>
-              </tr>
+              <Fragment key={c.id}>
+                <tr className={`border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA] ${c.notes && c.status === 'pending' ? 'border-b-0' : ''}`}>
+                  <td className="px-4 py-2.5 text-[#111]">{c.email}</td>
+                  <td className="px-4 py-2.5 text-[#555]">{c.name || '—'}</td>
+                  <td className="px-4 py-2.5 text-[#555] uppercase text-xs">{c.role}</td>
+                  <td className="px-4 py-2.5 text-[#555]">{c.company || '—'}</td>
+                  <td className="px-4 py-2.5 text-[#555]">{c.country || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 ${
+                      c.status === 'active' ? 'bg-[#111] text-white'
+                        : c.status === 'pending' ? 'bg-[#C8302B] text-white'
+                        : c.status === 'unsubscribed' || c.status === 'rejected' ? 'bg-[#E8E8E8] text-[#666]'
+                        : 'bg-[#C8302B] text-white'
+                    }`}>{c.status}</span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-2">
+                      {c.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => void setStatus(c, 'active')}
+                            title="Approve — they'll be included in future sends"
+                            className="flex items-center gap-1 bg-[#111] text-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide hover:bg-[#C8302B] transition-colors cursor-pointer"
+                          ><CheckCircle2 size={12} /> Approve</button>
+                          <button
+                            onClick={() => void setStatus(c, 'rejected')}
+                            title="Reject — kept on file, never emailed"
+                            className="border border-[#E0E0E0] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#666] hover:border-[#111] transition-colors cursor-pointer"
+                          >Reject</button>
+                        </>
+                      )}
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete ${c.email}?`)) return;
+                          try { await api.deletePromoContact(c.id); refresh(); } catch (e) { err(e); }
+                        }}
+                        className="text-[#BBB] hover:text-[#C8302B] transition-colors cursor-pointer"
+                      ><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+                {/* What they wrote is the whole basis for the decision, so it
+                    sits inline rather than behind a click. */}
+                {c.notes && c.status === 'pending' && (
+                  <tr className="border-b border-[#F0F0F0] last:border-0">
+                    <td colSpan={7} className="px-4 pb-3 pt-0">
+                      <p className="text-xs text-[#555] leading-relaxed whitespace-pre-wrap bg-[#FAFAFA] border-l-2 border-[#C8302B] pl-3 py-2">
+                        {c.notes}
+                      </p>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
             {contacts.length === 0 && (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-[#888]">
