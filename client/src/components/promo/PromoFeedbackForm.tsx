@@ -20,11 +20,14 @@ export default function PromoFeedbackForm({
   initial,
   onSave,
   tracks,
+  required = false,
 }: {
   initial?: PromoFeedbackEntry;
   onSave: (body: Body) => Promise<void>;
   /** Shown as the favourite-track picker; omit for single-track promos. */
   tracks?: PromoTrack[];
+  /** Downloads are gated on rating + comment; show what's still missing. */
+  required?: boolean;
 }) {
   const [rating, setRating] = useState<number>(initial?.rating ?? 0);
   const [favourite, setFavourite] = useState<number | null>(initial?.favourite_track_id ?? null);
@@ -32,18 +35,26 @@ export default function PromoFeedbackForm({
   const [hover, setHover] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  // What the server has, as opposed to what's typed — the checklist below has to
+  // reflect the former or it would claim the gate is met before anything is sent.
+  const [saved, setSaved] = useState({
+    rating: initial?.rating ?? 0,
+    comment: initial?.comment ?? '',
+  });
 
-  const commentDirty = comment !== (initial?.comment ?? '');
+  const commentDirty = comment !== saved.comment;
 
   const persist = async (patch: Body) => {
     setSaving(true);
+    const next = {
+      rating,
+      comment: comment || undefined,
+      favourite_track_id: favourite ?? undefined,
+      ...patch,
+    };
     try {
-      await onSave({
-        rating,
-        comment: comment || undefined,
-        favourite_track_id: favourite ?? undefined,
-        ...patch,
-      });
+      await onSave(next);
+      setSaved({ rating: next.rating ?? 0, comment: next.comment ?? '' });
       setSavedAt(Date.now());
     } catch {
       // Silent: a failed feedback save must never block listening.
@@ -52,11 +63,17 @@ export default function PromoFeedbackForm({
     }
   };
 
+  const hasRating = saved.rating > 0;
+  const hasComment = saved.comment.trim() !== '';
+  const complete = hasRating && hasComment;
+
   return (
     <div className="space-y-6 max-w-lg">
       {/* Rating */}
       <div>
-        <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-2 text-[#999]">Rating</p>
+        <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-2 text-[#999]">
+          Rating {required && <span className="text-[#C8302B]">*</span>}
+        </p>
         <div className="flex items-center gap-1" onMouseLeave={() => setHover(null)}>
           {[1, 2, 3, 4, 5].map(n => {
             const lit = (hover ?? rating) >= n;
@@ -119,18 +136,23 @@ export default function PromoFeedbackForm({
 
       {/* Comment */}
       <div>
-        <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-1 text-[#999]">Comment</p>
+        <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-1 text-[#999]">
+          Comment {required && <span className="text-[#C8302B]">*</span>}
+        </p>
         <textarea
           value={comment}
           onChange={e => setComment(e.target.value)}
+          // Also saved on blur: someone who types a comment and clicks straight
+          // at the download button would otherwise stay locked with no clue why.
+          onBlur={() => { if (commentDirty) void persist({ comment }); }}
           rows={2}
           maxLength={2000}
-          placeholder="Anything you want to tell us…"
+          placeholder={required ? 'A line or two — this is what unlocks the downloads.' : 'Anything you want to tell us…'}
           className="w-full bg-transparent border-0 border-b border-[#DDD] py-2 text-sm resize-none focus:outline-none transition-colors text-[#111] placeholder:text-[#C0BABC] focus:border-[#111]"
         />
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
           disabled={saving || !commentDirty}
@@ -146,6 +168,18 @@ export default function PromoFeedbackForm({
           </span>
         )}
       </div>
+
+      {/* Says exactly what's still missing, rather than a generic "locked" */}
+      {required && !complete && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-[#888]">
+          <span className={hasRating ? 'text-[#C8302B]' : ''}>
+            {hasRating ? '✓' : '○'} Star rating
+          </span>
+          <span className={hasComment ? 'text-[#C8302B]' : ''}>
+            {hasComment ? '✓' : '○'} Comment
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -293,7 +293,7 @@ export default function PromoLanding() {
                   onClick={() => { scrollToOverall(); }}
                   className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.15em] uppercase text-[#C8302B] hover:underline cursor-pointer"
                 >
-                  <Lock size={11} /> Rate to unlock downloads
+                  <Lock size={11} /> Leave feedback to unlock downloads
                 </button>
               )}
             </div>
@@ -351,8 +351,8 @@ export default function PromoLanding() {
                               if (!unlocked) { scrollToOverall(); return; }
                               setOpenDownload(openDownload === track.id ? null : track.id);
                             }}
-                            aria-label={unlocked ? `Download ${track.title}` : 'Rate the release to unlock downloads'}
-                            title={unlocked ? undefined : 'Rate the release to unlock downloads'}
+                            aria-label={unlocked ? `Download ${track.title}` : 'Leave a rating and a comment to unlock downloads'}
+                            title={unlocked ? undefined : 'Leave a rating and a comment to unlock downloads'}
                             className={`w-9 h-9 flex items-center justify-center border transition-colors cursor-pointer ${
                               !unlocked
                                 ? active
@@ -412,8 +412,8 @@ export default function PromoLanding() {
                     : <Lock size={14} className="text-[#C8302B] mt-0.5 shrink-0" />}
                   <p className="text-xs leading-relaxed">
                     {unlocked
-                      ? 'Downloads are unlocked. Thanks — that rating is genuinely useful.'
-                      : 'Give the release a star rating and the downloads unlock straight away.'}
+                      ? 'Downloads are unlocked. Thanks — that feedback is genuinely useful.'
+                      : 'Leave a star rating and a comment and the downloads unlock straight away. Favourite track is optional.'}
                   </p>
                 </div>
               )}
@@ -423,6 +423,7 @@ export default function PromoLanding() {
                 onSave={body => saveFeedback(null, body)}
                 // Picking a favourite from one track is a non-question.
                 tracks={tracks.length > 1 ? tracks : undefined}
+                required={campaign.download_enabled && campaign.require_feedback && !unlocked}
               />
             </div>
 

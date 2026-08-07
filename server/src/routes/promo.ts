@@ -849,14 +849,20 @@ const isExpired = (campaign: any) =>
   campaign.expires_at && new Date(campaign.expires_at).getTime() < Date.now();
 
 /**
- * Downloads can be gated on leaving feedback. "Feedback" means the overall row
- * with a rating — the whole point of the gate is to get the rating, so a blank
- * row must not unlock it.
+ * Downloads can be gated on leaving feedback: both a star rating and a written
+ * comment on the overall row. Favourite track stays optional.
+ *
+ * A blank or whitespace-only comment must not count, or the gate is decorative.
  */
 async function hasGivenFeedback(recipientId: number): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT 1 FROM promo_feedback
-      WHERE recipient_id = $1 AND track_id IS NULL AND rating IS NOT NULL AND rating > 0
+      WHERE recipient_id = $1
+        AND track_id IS NULL
+        AND rating IS NOT NULL AND rating > 0
+        -- Not TRIM(): Postgres only strips spaces, so a comment of newlines or
+        -- tabs would slip through. This requires one real character.
+        AND comment ~ '[^[:space:]]'
       LIMIT 1`,
     [recipientId]
   );
@@ -964,7 +970,7 @@ router.get('/:slug/download/:trackId', promoLimiter, async (req, res) => {
 
     // Enforced here, not just in the UI — otherwise the URL is a way around it.
     if (resolved.campaign.require_feedback === 1 && !(await hasGivenFeedback(resolved.recipientId))) {
-      res.status(403).json({ error: 'Please rate the release before downloading.' });
+      res.status(403).json({ error: 'Please leave a star rating and a comment before downloading.' });
       return;
     }
 

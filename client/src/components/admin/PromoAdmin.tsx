@@ -723,7 +723,7 @@ function CampaignsTab() {
               <input type="checkbox" checked={form.require_feedback}
                      disabled={!form.download_enabled}
                      onChange={e => setForm({ ...form, require_feedback: e.target.checked })} />
-              Require a star rating before downloading
+              Require a star rating <em>and</em> a comment before downloading
             </label>
           </div>
           <div className="flex gap-2">
