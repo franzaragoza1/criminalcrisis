@@ -525,6 +525,29 @@ router.post('/campaigns/:id/recipients', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Drops a recipient from a campaign before it reaches them.
+ *
+ * Only while queued: once an email is out, deleting the row would throw away the
+ * record of what that person did with it, and the mail is gone regardless.
+ */
+router.delete('/campaigns/:id/recipients/:recipientId', authMiddleware, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM promo_recipients
+        WHERE id = $1 AND campaign_id = $2 AND send_status = 'queued'`,
+      [req.params.recipientId, req.params.id]
+    );
+    if (rowCount === 0) {
+      res.status(409).json({ error: 'Already sent — it can only be removed while queued.' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /** Flips the campaign to 'sending'; the drip worker takes it from there. */
 router.post('/campaigns/:id/send', authMiddleware, async (req, res) => {
   try {

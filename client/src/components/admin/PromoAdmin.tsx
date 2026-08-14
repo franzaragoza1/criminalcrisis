@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
-  ChevronUp, ChevronDown, Edit3, Eye,
+  ChevronUp, ChevronDown, Edit3, Eye, X,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -617,6 +617,11 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
             <button onClick={() => void addRecipients()} disabled={busy} className={BTN_SECONDARY}>
               Add recipients
             </button>
+            <p className="text-xs text-[#888] mt-3">
+              Added but not sent yet? Open <strong className="text-[#111]">Results</strong> to review the
+              list and drop anyone you'd rather skip — they stay on your contacts and still get
+              future promos.
+            </p>
           </div>
 
           {/* Send */}
@@ -735,7 +740,7 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#E0E0E0] text-left">
-                  {['Contact', 'Status', 'Visited', 'Plays', 'Downloads', 'Feedback'].map(h => (
+                  {['Contact', 'Status', 'Visited', 'Plays', 'Downloads', 'Feedback', ''].map(h => (
                     <th key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#888]">{h}</th>
                   ))}
                 </tr>
@@ -758,6 +763,19 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                     <td className="px-4 py-2.5 font-mono text-xs">{r.plays}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{r.downloads}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{r.feedback_count}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      {/* Only while queued — once it's sent there's nothing to cancel */}
+                      {r.send_status === 'queued' && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Remove ${r.name || r.email} from this campaign?\n\nThey stay on your contact list and will get future promos.`)) return;
+                            try { await api.removePromoRecipient(campaign.id, r.id); refresh(); } catch (e) { err(e); }
+                          }}
+                          title="Remove from this campaign"
+                          className="text-[#BBB] hover:text-[#C8302B] transition-colors cursor-pointer"
+                        ><X size={14} /></button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

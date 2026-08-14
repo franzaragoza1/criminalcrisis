@@ -141,6 +141,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
     }),
+  removePromoRecipient: (campaignId: number, recipientId: number) =>
+    request(`/promo/campaigns/${campaignId}/recipients/${recipientId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
   sendPromoCampaign: (campaignId: number) =>
     request(`/promo/campaigns/${campaignId}/send`, {
       method: 'POST',
