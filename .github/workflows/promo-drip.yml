@@ -10,7 +10,13 @@ name: Promo drip
 
 on:
   schedule:
-    - cron: '17 * * * *' # hourly, off the hour — GitHub delays jobs scheduled on :00
+    # Every 10 minutes, not hourly. Render's free tier sleeps after 15 minutes
+    # idle, and a sleeping instance takes ~50s to wake — longer than Svix waits
+    # before giving up on a webhook. During the first send that cost us 75 of
+    # 100 delivery confirmations. Draining is a no-op once the daily cap is hit,
+    # so the extra runs exist purely to keep the service awake for Resend.
+    # The repo is public, so Actions minutes are free.
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       limit:
