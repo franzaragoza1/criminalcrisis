@@ -75,7 +75,7 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
 
   const { rows: batch } = await pool.query(
     `SELECT r.id, r.access_token,
-            c.email, c.name AS contact_name, c.unsub_token,
+            c.email, c.unsub_token,
             camp.id AS campaign_id, camp.slug, camp.title, camp.subject,
             camp.body_intro, camp.artwork_url, camp.release_date, camp.download_enabled
        FROM promo_recipients r
@@ -109,7 +109,6 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
 
   const emails: PromoEmail[] = batch.map(row => {
     const content: PromoEmailContent = {
-      contactName: row.contact_name,
       campaignTitle: row.title,
       bodyIntro: row.body_intro,
       artworkUrl: row.artwork_url,

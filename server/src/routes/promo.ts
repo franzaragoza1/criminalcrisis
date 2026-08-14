@@ -572,7 +572,7 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
          RETURNING id, name, unsub_token`,
       [to, newToken()]
     );
-    const { id: contactId, name: contactName, unsub_token } = contact.rows[0];
+    const { id: contactId, unsub_token } = contact.rows[0];
 
     const recipient = await pool.query(
       `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status, sent_at)
@@ -584,7 +584,6 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
     );
 
     const content: PromoEmailContent = {
-      contactName,
       campaignTitle: campaign.title,
       bodyIntro: campaign.body_intro,
       artworkUrl: campaign.artwork_url,
