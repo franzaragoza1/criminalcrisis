@@ -575,10 +575,11 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
     const { id: contactId, name: contactName, unsub_token } = contact.rows[0];
 
     const recipient = await pool.query(
-      `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status)
-            VALUES ($1, $2, $3, 'sent')
-       ON CONFLICT (campaign_id, contact_id) DO UPDATE SET sent_at = NOW()
-         RETURNING access_token`,
+      `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status, sent_at)
+            VALUES ($1, $2, $3, 'sent', NOW())
+       ON CONFLICT (campaign_id, contact_id)
+       DO UPDATE SET send_status = 'sent', sent_at = NOW(), delivered_at = NULL
+         RETURNING id, access_token`,
       [req.params.id, contactId, newToken()]
     );
 
@@ -603,6 +604,16 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
     });
 
     if (!result.ok) { res.status(502).json({ error: result.error }); return; }
+
+    // The webhook matches deliveries by provider_message_id. Without storing it
+    // here, a test send could never confirm that the whole Resend -> webhook ->
+    // suppression chain actually works, which is the one thing worth proving
+    // before a real campaign goes out.
+    await pool.query(
+      `UPDATE promo_recipients SET provider_message_id = $1 WHERE id = $2`,
+      [result.messageId ?? null, recipient.rows[0].id]
+    );
+
     res.json({ ok: true, messageId: result.messageId });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
