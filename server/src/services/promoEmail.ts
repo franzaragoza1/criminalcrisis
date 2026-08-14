@@ -35,13 +35,6 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Deliberately not personalised. The list is mostly artist aliases, and taking
- * the first word of one produces "Hi Cassius," for Cassius Select or
- * "Hi Minor," for Minor Science — worse than no name at all.
- */
-const GREETING = 'Hi,';
-
 export function renderPromoHtml(c: PromoEmailContent): string {
   const font = "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;";
   const intro = c.bodyIntro
@@ -98,8 +91,6 @@ export function renderPromoHtml(c: PromoEmailContent): string {
               Criminal Crisis
             </p>
 
-            <p style="margin:0 0 16px;${font} font-size:15px; line-height:1.6; color:${INK};">${GREETING}</p>
-
             <h1 style="margin:0 0 8px;${font} font-size:26px; line-height:1.15; text-transform:uppercase; color:${INK}; font-weight:bold;">
               ${escapeHtml(c.campaignTitle)}
             </h1>
@@ -145,8 +136,6 @@ export function renderPromoHtml(c: PromoEmailContent): string {
 export function renderPromoText(c: PromoEmailContent): string {
   const lines: string[] = [
     'CRIMINAL CRISIS',
-    '',
-    GREETING,
     '',
     c.campaignTitle.toUpperCase(),
   ];

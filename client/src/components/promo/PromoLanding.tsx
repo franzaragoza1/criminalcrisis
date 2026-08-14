@@ -235,8 +235,7 @@ export default function PromoLanding() {
     );
   }
 
-  const { campaign, contactName } = data;
-  const firstName = contactName?.split(' ')[0];
+  const { campaign } = data;
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] pb-32">
@@ -309,11 +308,6 @@ export default function PromoLanding() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
             >
-              {firstName && (
-                <p className="text-xs tracking-[0.2em] uppercase text-[#C8302B] mb-4">
-                  Hey {firstName} —
-                </p>
-              )}
               <h1 className="text-4xl md:text-6xl leading-[0.95] text-[#111] mb-8">
                 {campaign.title}
               </h1>
