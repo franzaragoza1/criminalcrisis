@@ -102,13 +102,12 @@ export function renderPromoHtml(c: PromoEmailContent): string {
     <p style="margin:0 0 5px;${FONT} font-size:21px; line-height:1.3; font-weight:600; color:${INK};">${escapeHtml(c.campaignTitle)}</p>
     ${releaseLine}
 
-    <p style="${BODY}">It's finished, and I wanted you to have it before it's out.</p>
     ${intro}
     ${tracks}
 
     <p style="margin:0 0 24px;${FONT} font-size:16px; line-height:1.5;"><a href="${escapeHtml(c.promoUrl)}" style="color:${ACCENT}; font-weight:600;">${linkLabel(c.downloadEnabled)}</a></p>
 
-    <p style="${BODY}">That link is yours alone, so please don't pass it on. If you have a minute to say what you think, it genuinely helps.</p>
+    <p style="${BODY}">If you have a minute to say what you think, it genuinely helps.</p>
 
     <p style="${BODY}">Thanks,<br>Criminal Crisis</p>
 
@@ -127,7 +126,7 @@ export function renderPromoText(c: PromoEmailContent): string {
   const lines: string[] = ['Criminal Crisis', '', c.campaignTitle];
 
   if (c.releaseDate) lines.push(`Out ${c.releaseDate}`);
-  lines.push('', "It's finished, and I wanted you to have it before it's out.", '');
+  lines.push('');
 
   if (c.bodyIntro) lines.push(c.bodyIntro.trim(), '');
 
@@ -142,7 +141,6 @@ export function renderPromoText(c: PromoEmailContent): string {
     `${linkLabel(c.downloadEnabled)}:`,
     c.promoUrl,
     '',
-    "That link is yours alone, so please don't pass it on.",
     'If you have a minute to say what you think, it genuinely helps.',
     '',
     'Thanks,',
