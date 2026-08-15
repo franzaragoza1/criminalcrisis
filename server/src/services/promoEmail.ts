@@ -1,24 +1,30 @@
 /**
  * Promo email template.
  *
- * Deliberately plain: one small artwork image, system fonts, a single link, no
- * tracking pixel and no link shortener. Image-heavy, script-heavy or
- * shortener-laden mail is exactly what filters downrank, and a promo that lands
- * in the inbox beats a prettier one that lands in spam.
+ * Written to reach Gmail's Primary tab, not to look good. The first version was
+ * a proper HTML email — artwork, a black CTA button, uppercase headings, table
+ * layout — and Gmail filed the entire first campaign under Promotions, where
+ * 200 recipients produced zero opens.
  *
- * The site's brand font (ABCCamera) is a web font and will not load in most mail
- * clients, so the template uses a Helvetica stack and keeps the identity through
- * layout, capitals and the accent red instead.
+ * Every one of those is a promotional signal. So: no images, no buttons, no
+ * tables, no uppercase, no letter-spacing, no preheader. A short note with one
+ * underlined text link, which is what a person writing to another person
+ * actually sends.
+ *
+ * `List-Unsubscribe` (set in the transport) is itself a bulk signal, but Gmail
+ * requires it from bulk senders and its absence risks the spam folder outright.
+ * Promotions is a worse tab; spam is a worse outcome. It stays.
+ *
+ * If you're tempted to make this prettier, check the Primary/Promotions split
+ * first — that trade has already been lost once.
  */
 
-const RED = '#C8302B';
 const INK = '#111111';
 const MUTED = '#767676';
 
 export type PromoEmailContent = {
   campaignTitle: string;
   bodyIntro: string | null;
-  artworkUrl: string | null;
   releaseDate: string | null;
   trackTitles: string[];
   promoUrl: string;
@@ -36,131 +42,83 @@ function escapeHtml(s: string): string {
 }
 
 export function renderPromoHtml(c: PromoEmailContent): string {
-  const font = "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;";
+  const font = "font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;";
+  const p = `margin:0 0 14px;${font} font-size:15px; line-height:1.55; color:${INK};`;
+
   const intro = c.bodyIntro
     ? c.bodyIntro
         .split(/\n{2,}/)
-        .map(p => `<p style="margin:0 0 16px;${font} font-size:15px; line-height:1.6; color:${INK};">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+        .map(t => `<p style="${p}">${escapeHtml(t).replace(/\n/g, '<br>')}</p>`)
         .join('')
     : '';
 
+  // Plain numbered lines. A table here reads as newsletter layout.
   const tracks = c.trackTitles.length
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
-        ${c.trackTitles
-          .map(
-            (t, i) => `<tr>
-              <td style="${font} font-size:13px; color:${MUTED}; padding:3px 12px 3px 0; font-variant-numeric:tabular-nums;">${String(i + 1).padStart(2, '0')}</td>
-              <td style="${font} font-size:14px; color:${INK}; padding:3px 0;">${escapeHtml(t)}</td>
-            </tr>`
-          )
-          .join('')}
-      </table>`
+    ? `<p style="${p}">${c.trackTitles.map((t, i) => `${i + 1}. ${escapeHtml(t)}`).join('<br>')}</p>`
     : '';
 
-  const artwork = c.artworkUrl
-    ? `<img src="${escapeHtml(c.artworkUrl)}" width="200" height="200" alt="${escapeHtml(c.campaignTitle)}"
-         style="display:block; width:200px; height:200px; border:0; margin:0 0 24px;">`
-    : '';
-
-  // DJs are meant to play promos out before release — the only ask is that the
-  // files don't get uploaded. "Embargo" would say the opposite.
   const releaseLine = c.releaseDate
-    ? `<p style="margin:0 0 24px;${font} font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:${RED};">
-         Out ${escapeHtml(c.releaseDate)}
-       </p>`
+    ? `<p style="${p}">Out ${escapeHtml(c.releaseDate)}.</p>`
     : '';
 
   return `<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(c.campaignTitle)}</title>
-</head>
-<body style="margin:0; padding:0; background:#FAFAFA;">
-  <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
-    ${escapeHtml(c.campaignTitle)} — private promo${c.downloadEnabled ? ', stream and download' : ', streaming'} inside.
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0; padding:16px;${font} font-size:15px; line-height:1.55; color:${INK}; background:#ffffff;">
+  <div style="max-width:520px;">
+
+    <p style="${p}">${escapeHtml(c.campaignTitle)} is finished, and I wanted you to have it before it's out.</p>
+
+    ${releaseLine}
+    ${intro}
+    ${tracks}
+
+    <p style="${p}"><a href="${escapeHtml(c.promoUrl)}" style="color:${INK};">${escapeHtml(c.promoUrl)}</a></p>
+
+    <p style="${p}">
+      That link is just for you, so please don't pass it on.${c.downloadEnabled ? " You can listen there or take the files." : ''}
+      If you have a minute to say what you think, it genuinely helps.
+    </p>
+
+    <p style="${p}">Thanks,<br>Criminal Crisis</p>
+
+    <p style="margin:26px 0 0;${font} font-size:12px; line-height:1.5; color:${MUTED};">
+      You're getting this because you're on our promo list.
+      <a href="${escapeHtml(c.unsubscribeUrl)}" style="color:${MUTED};">Unsubscribe</a>
+    </p>
+
   </div>
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FAFAFA;">
-    <tr>
-      <td align="center" style="padding:32px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px;">
-          <tr><td>
-
-            <p style="margin:0 0 32px;${font} font-size:12px; letter-spacing:0.22em; text-transform:uppercase; color:${INK}; font-weight:bold;">
-              Criminal Crisis
-            </p>
-
-            <h1 style="margin:0 0 8px;${font} font-size:26px; line-height:1.15; text-transform:uppercase; color:${INK}; font-weight:bold;">
-              ${escapeHtml(c.campaignTitle)}
-            </h1>
-
-            ${releaseLine}
-            ${artwork}
-            ${intro}
-            ${tracks}
-
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">
-              <tr><td style="background:${INK};">
-                <a href="${escapeHtml(c.promoUrl)}"
-                   style="display:inline-block; padding:15px 32px;${font} font-size:12px; letter-spacing:0.18em; text-transform:uppercase; color:#FAFAFA; text-decoration:none; font-weight:bold;">
-                  ${c.downloadEnabled ? 'Listen &amp; download' : 'Listen'}
-                </a>
-              </td></tr>
-            </table>
-
-            <p style="margin:0 0 28px;${font} font-size:13px; line-height:1.6; color:${MUTED};">
-              This link is personal to you, so please don't forward it.
-              Feedback on any track is very welcome on the same page — it genuinely helps.
-            </p>
-
-            <div style="border-top:1px solid #E0E0E0; padding-top:16px;">
-              <p style="margin:0 0 6px;${font} font-size:11px; line-height:1.6; color:${MUTED};">
-                You're receiving this because you're on the Criminal Crisis promo list.
-              </p>
-              <p style="margin:0;${font} font-size:11px; line-height:1.6; color:${MUTED};">
-                <a href="${escapeHtml(c.unsubscribeUrl)}" style="color:${MUTED}; text-decoration:underline;">Unsubscribe</a>
-                &nbsp;·&nbsp; criminalcrisis.com
-              </p>
-            </div>
-
-          </td></tr>
-        </table>
-      </td>
-    </tr>
-  </table>
 </body>
 </html>`;
 }
 
 export function renderPromoText(c: PromoEmailContent): string {
   const lines: string[] = [
-    'CRIMINAL CRISIS',
-    '',
-    c.campaignTitle.toUpperCase(),
+    `${c.campaignTitle} is finished, and I wanted you to have it before it's out.`,
   ];
 
-  if (c.releaseDate) lines.push(`Out ${c.releaseDate}`);
+  if (c.releaseDate) lines.push(`Out ${c.releaseDate}.`);
   lines.push('');
 
   if (c.bodyIntro) lines.push(c.bodyIntro.trim(), '');
 
   if (c.trackTitles.length) {
-    c.trackTitles.forEach((t, i) => lines.push(`${String(i + 1).padStart(2, '0')}  ${t}`));
+    c.trackTitles.forEach((t, i) => lines.push(`${i + 1}. ${t}`));
     lines.push('');
   }
 
   lines.push(
-    c.downloadEnabled ? 'Listen and download:' : 'Listen:',
     c.promoUrl,
     '',
-    "This link is personal to you, so please don't forward it.",
-    'Feedback on any track is very welcome on the same page — it genuinely helps.',
+    "That link is just for you, so please don't pass it on." +
+      (c.downloadEnabled ? ' You can listen there or take the files.' : ''),
+    'If you have a minute to say what you think, it genuinely helps.',
     '',
-    '—',
-    "You're receiving this because you're on the Criminal Crisis promo list.",
-    `Unsubscribe: ${c.unsubscribeUrl}`,
-    'criminalcrisis.com'
+    'Thanks,',
+    'Criminal Crisis',
+    '',
+    "You're getting this because you're on our promo list.",
+    `Unsubscribe: ${c.unsubscribeUrl}`
   );
 
   return lines.join('\n');

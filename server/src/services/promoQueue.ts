@@ -111,7 +111,6 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
     const content: PromoEmailContent = {
       campaignTitle: row.title,
       bodyIntro: row.body_intro,
-      artworkUrl: row.artwork_url,
       releaseDate: row.release_date,
       trackTitles: titlesByCampaign.get(row.campaign_id) || [],
       promoUrl: promoUrlFor(row.slug, row.access_token),
@@ -120,7 +119,9 @@ export async function drainQueue(requestedLimit?: number): Promise<DrainSummary>
     };
     return {
       to: row.email,
-      subject: row.subject || `${row.title} — Criminal Crisis promo`,
+      // Just the title. "Promo" in a subject line is a promotional keyword and
+      // pushes Gmail toward the Promotions tab.
+      subject: row.subject || row.title,
       html: renderPromoHtml(content),
       text: renderPromoText(content),
       unsubscribeUrl: content.unsubscribeUrl,

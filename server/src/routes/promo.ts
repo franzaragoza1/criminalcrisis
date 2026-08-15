@@ -645,7 +645,6 @@ router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
     const content: PromoEmailContent = {
       campaignTitle: campaign.title,
       bodyIntro: campaign.body_intro,
-      artworkUrl: campaign.artwork_url,
       releaseDate: campaign.release_date,
       trackTitles: tracks.map(t => t.title),
       promoUrl: promoUrlFor(campaign.slug, recipient.rows[0].access_token),
