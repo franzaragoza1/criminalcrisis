@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ChevronUp, ChevronDown, ExternalLink,
@@ -28,15 +28,18 @@ function buildEmbedSrc(embedHtml: string, trackId?: number, autoplay = false): s
   const ownTrackId = match[1].match(/\/track=(\d+)/)?.[1];
   if (!albumId && !ownTrackId) return '';
 
+  // Segment order matches what Bandcamp's own Share/Embed dialog emits, with
+  // `track=` before `transparent=`. Appending it at the end instead left every
+  // track playing the album from the top — the parameter was ignored.
   const parts = [
     'https://bandcamp.com/EmbeddedPlayer',
     albumId ? `album=${albumId}` : `track=${ownTrackId}`,
     'size=small',
     'bgcol=111111',
     'linkcol=cccccc',
-    'transparent=true',
   ];
   if (albumId && trackId) parts.push(`track=${trackId}`);
+  parts.push('transparent=true');
   if (autoplay) parts.push('autoplay=true');
 
   return parts.join('/') + '/';
@@ -48,7 +51,10 @@ export default function GlobalPlayer() {
   const [expanded, setExpanded] = useState(false);
   const [activeTrackIdx, setActiveTrackIdx] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // The iframe src is React state rather than an imperative ref write. Setting
+  // .src directly while also passing src={} in JSX means a re-render can put the
+  // old URL back, which is a silent way to lose a track change.
+  const [embedSrc, setEmbedSrc] = useState('');
 
   const baseSrc = useMemo(() => {
     if (!currentRelease?.bandcamp_embed) return '';
@@ -60,9 +66,7 @@ export default function GlobalPlayer() {
     if (!baseSrc) return;
     setActiveTrackIdx(-1);
     setIsPlaying(true);
-    if (iframeRef.current) {
-      iframeRef.current.src = baseSrc.replace(/\/$/, '') + '/autoplay=true/';
-    }
+    setEmbedSrc(baseSrc.replace(/\/$/, '') + '/autoplay=true/');
   }, [baseSrc]);
 
   // Listen for Bandcamp player events to sync play state and active track
@@ -83,12 +87,12 @@ export default function GlobalPlayer() {
 
   // Load a specific track by reloading the iframe src (the only reliable way)
   const loadTrack = useCallback((idx: number, autoplay = true) => {
-    if (!currentRelease?.bandcamp_embed || !iframeRef.current) return;
+    if (!currentRelease?.bandcamp_embed) return;
     const track = tracklist[idx];
     const trackId = typeof track === 'string' ? undefined : track.id;
     setActiveTrackIdx(idx);
     setIsPlaying(autoplay);
-    iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, autoplay);
+    setEmbedSrc(buildEmbedSrc(currentRelease.bandcamp_embed, trackId, autoplay));
   }, [currentRelease, tracklist]);
 
   function prevTrack() {
@@ -106,12 +110,12 @@ export default function GlobalPlayer() {
   }
 
   function togglePlay() {
-    if (!currentRelease?.bandcamp_embed || !iframeRef.current) return;
+    if (!currentRelease?.bandcamp_embed) return;
     const newPlaying = !isPlaying;
     setIsPlaying(newPlaying);
     const track = activeTrackIdx >= 0 ? tracklist[activeTrackIdx] : undefined;
     const trackId = track && typeof track !== 'string' ? track.id : undefined;
-    iframeRef.current.src = buildEmbedSrc(currentRelease.bandcamp_embed, trackId, newPlaying);
+    setEmbedSrc(buildEmbedSrc(currentRelease.bandcamp_embed, trackId, newPlaying));
   }
 
   const btnClass = 'p-1.5 text-[#555] hover:text-white transition-colors cursor-pointer';
@@ -222,8 +226,7 @@ export default function GlobalPlayer() {
             {/* Bandcamp iframe */}
             <div className="flex-1 min-w-0 overflow-hidden" style={{ height: '42px' }}>
               <iframe
-                ref={iframeRef}
-                src={baseSrc}
+                src={embedSrc}
                 allow="autoplay"
                 style={{ border: 0, width: '100%', height: '42px' }}
                 seamless
