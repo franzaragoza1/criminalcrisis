@@ -6,17 +6,40 @@ import {
 } from 'lucide-react';
 import { usePlayer } from '../../context/PlayerContext';
 
+/**
+ * Builds the embed URL for the 42px player bar.
+ *
+ * Rebuilt from the album id rather than patched, because what the admin pastes
+ * is whatever Bandcamp's "Share / Embed" dialog produced — normally the large
+ * 350x470 player. Dropping that into a 42px-tall bar showed only its top
+ * sliver, with the play button several hundred pixels below the fold, so
+ * releases looked broken and couldn't be started.
+ *
+ * `size=small` is Bandcamp's compact horizontal format, which is exactly the
+ * shape of this bar. Rebuilding also means an embed pasted with different
+ * options still comes out right.
+ */
 function buildEmbedSrc(embedHtml: string, trackId?: number, autoplay = false): string {
   const match = embedHtml.match(/src="([^"]+)"/);
   if (!match) return '';
-  let src = match[1]
-    .replace('bgcol=ffffff', 'bgcol=111111')
-    .replace('linkcol=0687f5', 'linkcol=cccccc');
-  src = src.replace(/\/track=\d+/, '');
-  src = src.replace(/\/autoplay=\w+/, '');
-  if (trackId) src = src.replace(/\/$/, '') + `/track=${trackId}/`;
-  if (autoplay) src = src.replace(/\/$/, '') + `/autoplay=true/`;
-  return src;
+
+  const albumId = match[1].match(/album=(\d+)/)?.[1];
+  // Single-track releases embed as track=... with no album.
+  const ownTrackId = match[1].match(/\/track=(\d+)/)?.[1];
+  if (!albumId && !ownTrackId) return '';
+
+  const parts = [
+    'https://bandcamp.com/EmbeddedPlayer',
+    albumId ? `album=${albumId}` : `track=${ownTrackId}`,
+    'size=small',
+    'bgcol=111111',
+    'linkcol=cccccc',
+    'transparent=true',
+  ];
+  if (albumId && trackId) parts.push(`track=${trackId}`);
+  if (autoplay) parts.push('autoplay=true');
+
+  return parts.join('/') + '/';
 }
 
 
