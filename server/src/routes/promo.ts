@@ -571,6 +571,42 @@ router.post('/campaigns/:id/send', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Pause / resume a send in progress.
+ *
+ * The drip worker only picks up campaigns with status 'sending', so parking a
+ * campaign on 'paused' stops it dead without touching the queue — every
+ * remaining recipient keeps its token and position. Worth having when a send
+ * looks like it's going wrong halfway through: the unsent half is the part you
+ * can still save.
+ */
+router.post('/campaigns/:id/pause', authMiddleware, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE promo_campaigns SET status = 'paused' WHERE id = $1 AND status = 'sending'`,
+      [req.params.id]
+    );
+    if (rowCount === 0) { res.status(409).json({ error: 'Only a campaign that is currently sending can be paused.' }); return; }
+    res.json({ ok: true, status: 'paused' });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/campaigns/:id/resume', authMiddleware, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE promo_campaigns SET status = 'sending' WHERE id = $1 AND status = 'paused'`,
+      [req.params.id]
+    );
+    if (rowCount === 0) { res.status(409).json({ error: 'That campaign is not paused.' }); return; }
+    const summary = await drainQueue();
+    res.json({ ok: true, status: 'sending', ...summary });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /** Sends the campaign to one arbitrary address for a pre-flight check. */
 router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
   try {

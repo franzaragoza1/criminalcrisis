@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
-  ChevronUp, ChevronDown, Edit3, Eye, X,
+  ChevronUp, ChevronDown, Edit3, Eye, X, Pause,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -411,6 +411,18 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
     } catch (e) { err(e); } finally { setBusy(false); }
   };
 
+  const pause = async () => {
+    setBusy(true);
+    try { await api.pausePromoCampaign(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
+  const resume = async () => {
+    setBusy(true);
+    try { await api.resumePromoCampaign(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
   const sendTest = async () => {
     if (!testEmail) return;
     setBusy(true);
@@ -421,6 +433,8 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
   };
 
   const t = stats?.totals;
+  // From stats so pause/resume reflects immediately, not the stale list prop
+  const status = stats?.campaign?.status ?? campaign.status;
 
   return (
     <div>
@@ -641,10 +655,30 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                 <Mail size={14} /> Send test
               </button>
             </div>
-            <button onClick={() => void send()} disabled={busy || campaign.status === 'sent'}
-                    className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
-              <Send size={14} /> {campaign.status === 'sent' ? 'Already sent' : 'Start sending'}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              {status === 'sending' ? (
+                <button onClick={() => void pause()} disabled={busy}
+                        className={`${BTN_PRIMARY} inline-flex items-center gap-2 !bg-[#C8302B] hover:!bg-[#111]`}>
+                  <Pause size={14} /> Pause sending
+                </button>
+              ) : status === 'paused' ? (
+                <button onClick={() => void resume()} disabled={busy}
+                        className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
+                  <Send size={14} /> Resume sending
+                </button>
+              ) : (
+                <button onClick={() => void send()} disabled={busy || status === 'sent'}
+                        className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
+                  <Send size={14} /> {status === 'sent' ? 'Already sent' : 'Start sending'}
+                </button>
+              )}
+
+              {status === 'paused' && (
+                <span className="text-xs text-[#C8302B]">
+                  Paused — {t?.queued ?? 0} still queued. Nothing goes out until you resume.
+                </span>
+              )}
+            </div>
           </div>
         </div>
       ) : (

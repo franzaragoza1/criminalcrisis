@@ -151,6 +151,16 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
     }),
+  pausePromoCampaign: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  resumePromoCampaign: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
   testPromoCampaign: (campaignId: number, email: string) =>
     request(`/promo/campaigns/${campaignId}/test`, {
       method: 'POST',

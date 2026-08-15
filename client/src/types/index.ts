@@ -75,7 +75,7 @@ export interface PromoCampaign {
   body_intro?: string;
   artwork_url?: string;
   release_id?: number;
-  status: 'draft' | 'sending' | 'sent';
+  status: 'draft' | 'sending' | 'paused' | 'sent';
   release_date?: string;
   download_enabled: number;
   require_feedback: number;
