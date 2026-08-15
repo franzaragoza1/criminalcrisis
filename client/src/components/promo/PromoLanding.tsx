@@ -23,6 +23,7 @@ export default function PromoLanding() {
   const [feedback, setFeedback] = useState<Record<string, PromoFeedbackEntry>>({});
   const [unlocked, setUnlocked] = useState(false);
   const [openDownload, setOpenDownload] = useState<number | null>(null);
+  const [slowLoad, setSlowLoad] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +58,9 @@ export default function PromoLanding() {
     if (!token) return;
     let alive = true;
 
+    // A warm server answers in ~200ms; anything past 2.5s means a cold start.
+    const slowTimer = setTimeout(() => { if (alive) setSlowLoad(true); }, 2500);
+
     void (async () => {
       try {
         const view = (await api.getPromo(slug, token)) as PromoView;
@@ -77,7 +81,7 @@ export default function PromoLanding() {
       }
     })();
 
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(slowTimer); };
   }, [slug, token]);
 
   // Memoised so the fallback array doesn't get a new identity on every render,
@@ -229,8 +233,18 @@ export default function PromoLanding() {
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA]">
-        <p className="text-[10px] font-semibold tracking-[0.4em] uppercase text-[#C0BABC] animate-pulse">Loading</p>
+      <div className="min-h-screen flex items-center justify-center px-6 bg-[#FAFAFA]">
+        <div className="text-center max-w-xs">
+          <p className="text-[10px] font-semibold tracking-[0.4em] uppercase text-[#C0BABC] animate-pulse">Loading</p>
+          {/* The API sleeps on the free tier and can take up to a minute to wake.
+              Without this, a DJ stares at a blank page and assumes it's broken. */}
+          {slowLoad && (
+            <p className="mt-5 text-xs text-[#888] leading-relaxed">
+              Our server is waking up — this can take up to a minute the first time.
+              Hang on, it's worth it.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
