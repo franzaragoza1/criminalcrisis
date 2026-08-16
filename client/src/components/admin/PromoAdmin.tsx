@@ -423,6 +423,23 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
     catch (e) { err(e); } finally { setBusy(false); }
   };
 
+  const sendReminder = async () => {
+    const n = stats?.totals.remindable ?? 0;
+    if (!confirm(
+      `Send a reminder to ${n} ${n === 1 ? 'person who has' : 'people who have'} not opened their link?\n\n` +
+      `Anyone who visits before their reminder goes out is dropped from it automatically.`
+    )) return;
+    setBusy(true);
+    try { await api.sendPromoReminder(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
+  const cancelReminder = async () => {
+    setBusy(true);
+    try { await api.cancelPromoReminder(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
   const sendTest = async () => {
     if (!testEmail) return;
     setBusy(true);
@@ -679,6 +696,49 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Reminder */}
+          <div className="border-2 border-[#111] bg-white p-5">
+            <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2">
+              <RefreshCw size={14} /> Reminder
+            </h3>
+            <p className="text-xs text-[#888] mb-4">
+              A second send to everyone who got the first mail and never opened their link. Not
+              "didn't open the email" — that rests on a tracking pixel Apple has been faking since
+              2021. This is people whose personal link was never loaded, which is a real signal.
+              Anyone who turns up before their reminder goes out is dropped from it automatically.
+              It drips under the same daily cap, and it runs whether or not the campaign is paused —
+              pausing only ever holds back first sends. Edit the subject above first if you want the
+              reminder to read differently.
+            </p>
+
+            {(t?.reminderQueued ?? 0) > 0 ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={() => void cancelReminder()} disabled={busy}
+                        className={`${BTN_SECONDARY} inline-flex items-center gap-2`}>
+                  <X size={14} /> Cancel reminder
+                </button>
+                <span className="text-xs text-[#888]">
+                  {t?.reminderQueued} queued, {t?.reminderSent ?? 0} sent. Only the unsent ones can be pulled back.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={() => void sendReminder()} disabled={busy || (t?.remindable ?? 0) === 0}
+                        className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
+                  <RefreshCw size={14} /> Remind {t?.remindable ?? 0} who never opened
+                </button>
+                {(t?.reminderSent ?? 0) > 0 && (
+                  <span className="text-xs text-[#888]">{t?.reminderSent} already reminded.</span>
+                )}
+                {(t?.remindable ?? 0) === 0 && (
+                  <span className="text-xs text-[#888]">
+                    Nobody left to remind — everyone has either visited already or been reminded once.
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (

@@ -213,6 +213,15 @@ export async function initDb() {
   await pool.query(`ALTER TABLE promo_campaigns ADD COLUMN IF NOT EXISTS require_feedback INTEGER DEFAULT 1`);
   await pool.query(`ALTER TABLE promo_feedback ADD COLUMN IF NOT EXISTS favourite_track_id INTEGER REFERENCES promo_tracks(id) ON DELETE SET NULL`);
 
+  // Reminders are a second queue over the same rows, kept in their own columns
+  // so queueing one never disturbs the record of the first send: send_status
+  // stays 'sent'/'delivered' and sent_at keeps pointing at the original.
+  // NULL reminder_status = never reminded.
+  await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_status TEXT`);
+  await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_message_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS promo_recipients_reminder_idx ON promo_recipients (reminder_status, campaign_id)`);
+
   // "Embargo" is press language; for a club label the useful date is when the
   // record is out. Postgres has no IF EXISTS for RENAME COLUMN, hence the guard.
   await pool.query(`

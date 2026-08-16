@@ -48,7 +48,18 @@ export type PromoEmailContent = {
   promoUrl: string;
   unsubscribeUrl: string;
   downloadEnabled: boolean;
+  /** Second attempt at someone who never opened the link. */
+  isReminder?: boolean;
 };
+
+/**
+ * The one line that separates a reminder from the original.
+ *
+ * Deliberately an apology rather than a nudge: the recipient did nothing wrong
+ * by ignoring the first one, and pretending otherwise is how promo mail earns
+ * the spam button.
+ */
+const REMINDER_LINE = 'Sending this once more in case it got buried the first time.';
 
 function escapeHtml(s: string): string {
   return s
@@ -102,6 +113,7 @@ export function renderPromoHtml(c: PromoEmailContent): string {
     <p style="margin:0 0 5px;${FONT} font-size:21px; line-height:1.3; font-weight:600; color:${INK};">${escapeHtml(c.campaignTitle)}</p>
     ${releaseLine}
 
+    ${c.isReminder ? `<p style="${BODY}">${REMINDER_LINE}</p>` : ''}
     ${intro}
     ${tracks}
 
@@ -128,6 +140,7 @@ export function renderPromoText(c: PromoEmailContent): string {
   if (c.releaseDate) lines.push(`Out ${c.releaseDate}`);
   lines.push('');
 
+  if (c.isReminder) lines.push(REMINDER_LINE, '');
   if (c.bodyIntro) lines.push(c.bodyIntro.trim(), '');
 
   if (c.trackTitles.length) {

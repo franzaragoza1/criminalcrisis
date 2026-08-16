@@ -129,11 +129,14 @@ export interface PromoStats {
     recipients: number; queued: number; sent: number; delivered: number;
     bounced: number; failed: number; skipped: number;
     visited: number; played: number; downloaded: number; feedback: number;
+    /** Got the first mail, never visited, not reminded yet — the reminder's audience. */
+    remindable: number; reminderQueued: number; reminderSent: number;
   };
   recipients: Array<{
     id: number; email: string; name?: string; role?: string; company?: string;
     country?: string; source?: string;
     send_status: string; sent_at?: string; delivered_at?: string; first_visit_at?: string;
+    reminder_status?: string | null; reminder_sent_at?: string;
     error?: string; plays: number; downloads: number; feedback_count: number;
   }>;
   feedback: Array<{

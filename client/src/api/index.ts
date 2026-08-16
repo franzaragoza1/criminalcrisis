@@ -161,6 +161,17 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
     }),
+  /** Queues a second send to everyone who never opened their link. */
+  sendPromoReminder: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/reminder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  cancelPromoReminder: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/reminder/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
   testPromoCampaign: (campaignId: number, email: string) =>
     request(`/promo/campaigns/${campaignId}/test`, {
       method: 'POST',

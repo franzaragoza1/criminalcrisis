@@ -607,6 +607,74 @@ router.post('/campaigns/:id/resume', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Who a reminder may go to: got the first mail, never turned up, not reminded
+ * yet, still mailable, not one of the sender's own test rows.
+ *
+ * `first_visit_at IS NULL` is the whole point. Every other promo tool reminds
+ * "people who didn't open", which rests on a tracking pixel that Apple Mail
+ * Privacy Protection has been faking since 2021. A visit is a real person
+ * fetching a real page with their own token, so this list is not a guess.
+ *
+ * Shared by the count and the queue-up so the number on the button and the
+ * number actually mailed can never drift apart.
+ */
+const REMINDABLE = `
+      r.send_status IN ('sent', 'delivered')
+  AND r.first_visit_at IS NULL
+  AND r.reminder_status IS NULL
+  AND c.status = 'active'
+  AND COALESCE(c.source, '') <> 'test'`;
+
+/**
+ * Queues a reminder to everyone who never opened their link.
+ *
+ * Independent of campaign status on purpose: a campaign reads 'sent' by the
+ * time a reminder makes sense, and a paused campaign must stay paused — this
+ * must never become a back door that releases first sends someone stopped
+ * deliberately.
+ */
+router.post('/campaigns/:id/reminder', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE promo_recipients r
+          SET reminder_status = 'queued'
+         FROM promo_contacts c
+        WHERE c.id = r.contact_id
+          AND r.campaign_id = $1
+          AND ${REMINDABLE}
+      RETURNING r.id`,
+      [req.params.id]
+    );
+
+    if (rows.length === 0) {
+      res.status(409).json({ error: 'Nobody to remind — everyone has either visited already or been reminded.' });
+      return;
+    }
+
+    // Send the first slice now so the admin sees it working; the cron drips the
+    // rest under the same daily cap the first send used.
+    const summary = await drainQueue();
+    res.json({ queued: rows.length, dailyCap: dailyCap(), ...summary });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Un-queues a reminder that hasn't gone out yet. Sent ones cannot be recalled. */
+router.post('/campaigns/:id/reminder/cancel', authMiddleware, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE promo_recipients SET reminder_status = NULL
+        WHERE campaign_id = $1 AND reminder_status = 'queued'`,
+      [req.params.id]
+    );
+    res.json({ ok: true, cancelled: rowCount ?? 0 });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /** Sends the campaign to one arbitrary address for a pre-flight check. */
 router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
   try {
@@ -723,6 +791,7 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
 
     const { rows: recipients } = await pool.query(
       `SELECT r.id, r.send_status, r.sent_at, r.delivered_at, r.opened_at, r.first_visit_at, r.error,
+              r.reminder_status, r.reminder_sent_at,
               c.email, c.name, c.role, c.company, c.country, c.source,
               (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'play')     AS plays,
               (SELECT COUNT(*)::int FROM promo_events e WHERE e.recipient_id = r.id AND e.type = 'download') AS downloads,
@@ -772,8 +841,22 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
       [req.params.id]
     );
 
+    // Counted in SQL with the same predicate the reminder endpoint uses, rather
+    // than re-derived from `recipients` here — two copies of that rule would
+    // eventually disagree, and the one on the button is the one people trust.
+    const { rows: [remindable] } = await pool.query(
+      `SELECT COUNT(*)::int AS n
+         FROM promo_recipients r
+         JOIN promo_contacts c ON c.id = r.contact_id
+        WHERE r.campaign_id = $1 AND ${REMINDABLE}`,
+      [req.params.id]
+    );
+
     const totals = {
       recipients: recipients.length,
+      remindable: remindable.n,
+      reminderQueued: recipients.filter(r => r.reminder_status === 'queued').length,
+      reminderSent: recipients.filter(r => r.reminder_status === 'sent').length,
       queued: recipients.filter(r => r.send_status === 'queued').length,
       sent: recipients.filter(r => ['sent', 'delivered'].includes(r.send_status)).length,
       delivered: recipients.filter(r => r.delivered_at).length,
@@ -882,6 +965,14 @@ export async function handleResendWebhook(req: any, res: any) {
       if (messageId) {
         await pool.query(
           `UPDATE promo_recipients SET send_status = 'bounced', error = $1 WHERE provider_message_id = $2`,
+          [type, messageId]
+        );
+        // A reminder carries its own message id, so the same event has to be
+        // matched against that column too. Recorded on the reminder's own
+        // status, never on send_status, so a bounced reminder cannot rewrite
+        // the record of a first send that went through fine.
+        await pool.query(
+          `UPDATE promo_recipients SET reminder_status = 'bounced', error = $1 WHERE reminder_message_id = $2`,
           [type, messageId]
         );
       }
