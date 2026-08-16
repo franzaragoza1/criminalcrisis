@@ -37,9 +37,19 @@ function apiKey(): string {
   return key;
 }
 
+/**
+ * Gmail reads the sender address itself, and the first default here was
+ * `promos@` — the promotional keyword was sitting in the From line of every
+ * message while the template was being stripped back to fix exactly that.
+ * A person's address, with a person's name in front of it, is worth more than
+ * anything the HTML can do. Don't put promos/news/noreply/marketing back.
+ *
+ * No mailbox has to exist for the local part: the domain is DKIM-signed, so
+ * Resend will send as any address on it, and replies go to `Reply-To`.
+ */
 export function fromAddress(): string {
-  const email = process.env.PROMO_FROM_EMAIL || 'promos@criminalcrisis.com';
-  const name = process.env.PROMO_FROM_NAME || 'Criminal Crisis';
+  const email = process.env.PROMO_FROM_EMAIL || 'fran@criminalcrisis.com';
+  const name = process.env.PROMO_FROM_NAME || 'Fran — Criminal Crisis';
   return `${name} <${email}>`;
 }
 
