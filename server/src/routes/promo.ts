@@ -24,6 +24,7 @@ import {
 } from '../services/promoQueue.js';
 import { createDomain, listDomains, getDomain, verifyDomain, sendPromoEmail } from '../services/resend.js';
 import { renderPromoHtml, renderPromoText, type PromoEmailContent } from '../services/promoEmail.js';
+import { cleanAddress, addressProblem, isEmail } from '../lib/email.js';
 
 const router = Router();
 
@@ -70,7 +71,6 @@ const slugify = (s: string) =>
  */
 const RESERVED_SLUGS = new Set(['contacts', 'campaigns', 'domains', 'queue', 'webhook', 'unsubscribe', 'signup', 'tracks']);
 
-const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 const parseTags = (raw: unknown): string[] => {
   if (Array.isArray(raw)) return raw.map(String);
@@ -183,7 +183,7 @@ router.post('/contacts/import', authMiddleware, upload.single('file'), async (re
     const invalid: string[] = [];
 
     for (const rec of records) {
-      const email = pick(rec, ['email', 'e-mail', 'mail', 'correo', 'email address']).toLowerCase();
+      const email = cleanAddress(pick(rec, ['email', 'e-mail', 'mail', 'correo', 'email address']));
       if (!isEmail(email)) { if (email) invalid.push(email); continue; }
 
       const name = pick(rec, ['name', 'nombre', 'full name', 'contact', 'contact name', 'first name']);
@@ -217,13 +217,15 @@ router.post('/contacts/import', authMiddleware, upload.single('file'), async (re
 router.post('/contacts', authMiddleware, async (req, res) => {
   try {
     const { email, name, role, country, company, tags, notes } = req.body;
-    if (!isEmail(String(email || ''))) { res.status(400).json({ error: 'Valid email required' }); return; }
+    const address = cleanAddress(email);
+    const problem = addressProblem(address);
+    if (problem) { res.status(400).json({ error: `That address ${problem}.` }); return; }
     const result = await pool.query(
       `INSERT INTO promo_contacts (email, name, role, country, company, tags, notes, source, unsub_token)
             VALUES ($1,$2,$3,$4,$5,$6,$7,'manual',$8)
        ON CONFLICT (email) DO NOTHING
          RETURNING id`,
-      [String(email).toLowerCase(), name || null, (role || 'dj').toLowerCase(), country || null,
+      [address, name || null, (role || 'dj').toLowerCase(), country || null,
        company || null, JSON.stringify(parseTags(tags)), notes || null, newToken()]
     );
     if (result.rows.length === 0) { res.status(409).json({ error: 'That email is already on the list' }); return; }
@@ -244,7 +246,7 @@ router.put('/contacts/:id', authMiddleware, async (req, res) => {
           SET email=$1, name=$2, role=$3, country=$4, company=$5, tags=$6, status=$7, notes=$8, updated_at=NOW()
         WHERE id=$9`,
       [
-        email ? String(email).toLowerCase() : prev.email,
+        email ? cleanAddress(email) : prev.email,
         name ?? prev.name,
         role ?? prev.role,
         country ?? prev.country,
@@ -678,8 +680,9 @@ router.post('/campaigns/:id/reminder/cancel', authMiddleware, async (req, res) =
 /** Sends the campaign to one arbitrary address for a pre-flight check. */
 router.post('/campaigns/:id/test', authMiddleware, async (req, res) => {
   try {
-    const to = String(req.body?.email || '').toLowerCase();
-    if (!isEmail(to)) { res.status(400).json({ error: 'Valid email required' }); return; }
+    const to = cleanAddress(req.body?.email);
+    const toProblem = addressProblem(to);
+    if (toProblem) { res.status(400).json({ error: `That address ${toProblem}.` }); return; }
 
     const { rows } = await pool.query('SELECT * FROM promo_campaigns WHERE id = $1', [req.params.id]);
     if (rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
@@ -1029,7 +1032,8 @@ router.get('/unsubscribe/:token', async (req, res) => {
 router.post('/signup', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'promo-signup' }), async (req, res) => {
   try {
     const { email, name, role, country, company, notes } = req.body;
-    if (!isEmail(String(email || ''))) { res.status(400).json({ error: 'Valid email required' }); return; }
+    const address = cleanAddress(email);
+    if (addressProblem(address)) { res.status(400).json({ error: 'Valid email required' }); return; }
 
     await pool.query(
       `INSERT INTO promo_contacts (email, name, role, country, company, notes, status, source, unsub_token)
@@ -1042,7 +1046,7 @@ router.post('/signup', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix:
                   updated_at = NOW()`,
       // status is deliberately absent from the DO UPDATE: someone already on the
       // list who fills the form again must not be knocked back to pending.
-      [String(email).toLowerCase(), name || null, (role || 'dj').toLowerCase(),
+      [address, name || null, (role || 'dj').toLowerCase(),
        country || null, company || null, notes ? String(notes).slice(0, 1000) : null, newToken()]
     );
     res.json({ ok: true });
