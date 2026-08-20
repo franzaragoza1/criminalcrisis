@@ -4,8 +4,14 @@ server/node_modules/
 client/dist/
 server/dist/
 *.db
+# Any .env variant, including backups like .env.bak that a stray `git add -A`
+# would otherwise sweep into a public repo. The .example files stay tracked.
 server/.env
+server/.env.*
+!server/.env.example
 client/.env
+client/.env.*
+!client/.env.example
 server/uploads/*
 !server/uploads/.gitkeep
 .claude/
