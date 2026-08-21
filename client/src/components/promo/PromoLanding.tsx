@@ -200,7 +200,7 @@ export default function PromoLanding() {
 
   const saveFeedback = async (
     trackId: number | null,
-    body: { rating?: number; comment?: string; favourite_track_id?: number }
+    body: { rating?: number; comment?: string; favourite_track_id?: number; name?: string }
   ) => {
     const res = (await api.sendPromoFeedback(slug, { k: token, track_id: trackId, ...body })) as {
       downloadsUnlocked?: boolean;
@@ -211,6 +211,7 @@ export default function PromoLanding() {
     }));
     // Unlock without a reload the moment the rating lands.
     if (res?.downloadsUnlocked !== undefined) setUnlocked(res.downloadsUnlocked);
+    if (body.name) setData(prev => (prev ? { ...prev, contactName: body.name! } : prev));
   };
 
   // --- states -------------------------------------------------------------
@@ -476,6 +477,8 @@ export default function PromoLanding() {
                 // Picking a favourite from one track is a non-question.
                 tracks={tracks.length > 1 ? tracks : undefined}
                 required={campaign.download_enabled && campaign.require_feedback && !unlocked}
+                // Share-link arrivals have no name on file; mailed recipients do.
+                askName={!data?.contactName}
               />
             </div>
 

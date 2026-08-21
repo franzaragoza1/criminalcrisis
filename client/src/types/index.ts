@@ -76,6 +76,8 @@ export interface PromoCampaign {
   artwork_url?: string;
   release_id?: number;
   status: 'draft' | 'sending' | 'paused' | 'sent';
+  /** Set once a public share link has been handed out. */
+  share_token?: string | null;
   release_date?: string;
   download_enabled: number;
   require_feedback: number;

@@ -217,6 +217,13 @@ export async function initDb() {
   // so queueing one never disturbs the record of the first send: send_status
   // stays 'sent'/'delivered' and sent_at keeps pointing at the original.
   // NULL reminder_status = never reminded.
+  // Public share link. One unguessable token per campaign, not the bare slug:
+  // slugs are short and predictable, and a draft or paused campaign must not
+  // become readable by anyone who guesses one. Nullable = no link handed out.
+  await pool.query(`ALTER TABLE promo_campaigns ADD COLUMN IF NOT EXISTS share_token TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS promo_campaigns_share_token_uniq
+                      ON promo_campaigns (share_token) WHERE share_token IS NOT NULL`);
+
   await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_status TEXT`);
   await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE promo_recipients ADD COLUMN IF NOT EXISTS reminder_message_id TEXT`);

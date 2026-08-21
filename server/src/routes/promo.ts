@@ -69,7 +69,7 @@ const slugify = (s: string) =>
  * Single-segment admin routes are registered before the public `/:slug` handler,
  * so a campaign slugged "campaigns" would be unreachable. Suffix those instead.
  */
-const RESERVED_SLUGS = new Set(['contacts', 'campaigns', 'domains', 'queue', 'webhook', 'unsubscribe', 'signup', 'tracks']);
+const RESERVED_SLUGS = new Set(['contacts', 'campaigns', 'domains', 'queue', 'webhook', 'unsubscribe', 'signup', 'tracks', 'share', 'join']);
 
 
 const parseTags = (raw: unknown): string[] => {
@@ -1093,6 +1093,16 @@ const isExpired = (campaign: any) =>
  *
  * A blank or whitespace-only comment must not count, or the gate is decorative.
  */
+/** True when this recipient's contact still has no name — a share-link arrival. */
+async function isNameless(recipientId: number): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM promo_recipients r JOIN promo_contacts c ON c.id = r.contact_id
+      WHERE r.id = $1 AND COALESCE(c.name, '') = ''`,
+    [recipientId]
+  );
+  return rows.length > 0;
+}
+
 async function hasGivenFeedback(recipientId: number): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT 1 FROM promo_feedback
@@ -1121,6 +1131,88 @@ function downloadFormatsFor(track: any): Array<{ id: string; label: string }> {
   }
   return formats;
 }
+
+// ===========================================================================
+// PUBLIC — share link
+//
+// A campaign-level link with no personal token in it, for handing to people who
+// were never on the list. Opening it costs the visitor nothing: the server mints
+// them an anonymous recipient row and redirects straight to the player. No form,
+// no gate, music first.
+//
+// The name is asked later, inside the feedback form they were already filling in
+// to unlock the download. Asking up front would put a step in front of the one
+// thing that has to be effortless — pressing play.
+//
+// The reason they get their own row rather than a shared one: the overall
+// feedback row is unique per recipient, so several people behind one identity
+// would silently overwrite each other's comments.
+// ===========================================================================
+
+/** Mints the share link, or returns the existing one. Idempotent on purpose:
+ *  regenerating would silently kill a link already sent to people. */
+router.post('/campaigns/:id/share', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE promo_campaigns SET share_token = COALESCE(share_token, $2)
+        WHERE id = $1 RETURNING share_token`,
+      [req.params.id, newToken()]
+    );
+    if (rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json({ url: `${siteUrl()}/promo/join/${rows[0].share_token}` });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Revokes the link. People who already opened it keep their own tokens. */
+router.delete('/campaigns/:id/share', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(`UPDATE promo_campaigns SET share_token = NULL WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Turns a share link into a personal one. The only thing standing between the
+ * visitor and the music, and it asks them for nothing.
+ */
+router.post('/share/:shareToken/enter', rateLimit({ windowMs: 60 * 60 * 1000, max: 40, keyPrefix: 'promo-share' }), async (req, res) => {
+  try {
+    const { rows: campaigns } = await pool.query(
+      `SELECT id, slug, expires_at FROM promo_campaigns WHERE share_token = $1`,
+      [String(req.params.shareToken)]
+    );
+    if (campaigns.length === 0 || isExpired(campaigns[0])) {
+      res.status(404).json({ error: 'This link is no longer active.' });
+      return;
+    }
+    const campaign = campaigns[0];
+
+    // Unmailable by construction: .invalid can never resolve (RFC 2606) and
+    // 'rejected' keeps the row out of every send query regardless. Named later,
+    // if and when they leave feedback.
+    const { rows: contacts } = await pool.query(
+      `INSERT INTO promo_contacts (email, role, status, source, unsub_token)
+            VALUES ($1, 'dj', 'rejected', 'share', $2)
+         RETURNING id`,
+      [`share-${crypto.randomBytes(8).toString('hex')}@promo.invalid`, newToken()]
+    );
+
+    const { rows: recipients } = await pool.query(
+      `INSERT INTO promo_recipients (campaign_id, contact_id, access_token, send_status)
+            VALUES ($1, $2, $3, 'skipped')
+         RETURNING access_token`,
+      [campaign.id, contacts[0].id, newToken()]
+    );
+
+    res.json({ url: promoUrlFor(campaign.slug, recipients[0].access_token) });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 router.get('/:slug', promoLimiter, async (req, res) => {
   try {
@@ -1261,6 +1353,25 @@ router.post('/:slug/feedback', promoLimiter, async (req, res) => {
   try {
     const resolved = await resolveRecipient(req.params.slug, req.body?.k);
     if (!resolved) { res.status(404).json({ error: 'Invalid link' }); return; }
+
+    // Share-link visitors arrive nameless, and this is the only place they are
+    // asked. Required, because anonymous feedback tells the label nothing — but
+    // only ever written when the contact has no name yet, so editing a comment
+    // can never rename someone who was already on the list.
+    const nameless = await isNameless(resolved.recipientId);
+    const givenName = String(req.body?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (nameless && givenName.length < 2) {
+      res.status(400).json({ error: 'Please put your name in so I know whose feedback this is.' });
+      return;
+    }
+    if (nameless) {
+      await pool.query(
+        `UPDATE promo_contacts c SET name = $1, updated_at = NOW()
+           FROM promo_recipients r
+          WHERE r.id = $2 AND c.id = r.contact_id AND COALESCE(c.name, '') = ''`,
+        [givenName, resolved.recipientId]
+      );
+    }
 
     const trackId = req.body?.track_id ? Number(req.body.track_id) : null;
     // 0 means "no rating"; it must survive rather than be clamped up to 1.

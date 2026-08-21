@@ -6,6 +6,7 @@ type Body = {
   rating?: number;
   comment?: string;
   favourite_track_id?: number;
+  name?: string;
 };
 
 /**
@@ -21,6 +22,7 @@ export default function PromoFeedbackForm({
   onSave,
   tracks,
   required = false,
+  askName = false,
 }: {
   initial?: PromoFeedbackEntry;
   onSave: (body: Body) => Promise<void>;
@@ -28,10 +30,14 @@ export default function PromoFeedbackForm({
   tracks?: PromoTrack[];
   /** Downloads are gated on rating + comment; show what's still missing. */
   required?: boolean;
+  /** Share-link arrivals have no name on file. The only thing they are asked. */
+  askName?: boolean;
 }) {
   const [rating, setRating] = useState<number>(initial?.rating ?? 0);
   const [favourite, setFavourite] = useState<number | null>(initial?.favourite_track_id ?? null);
   const [comment, setComment] = useState(initial?.comment ?? '');
+  const [name, setName] = useState('');
+  const [needsName, setNeedsName] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -44,12 +50,20 @@ export default function PromoFeedbackForm({
 
   const commentDirty = comment !== saved.comment;
 
+  const nameReady = !askName || name.trim().length >= 2;
+
   const persist = async (patch: Body) => {
+    // The server rejects nameless feedback, and this form swallows save errors
+    // so a failure can never block listening. Without this guard a share-link
+    // visitor would click stars, see them light up, and save nothing at all.
+    if (!nameReady) { setNeedsName(true); return; }
+    setNeedsName(false);
     setSaving(true);
     const next = {
       rating,
       comment: comment || undefined,
       favourite_track_id: favourite ?? undefined,
+      ...(askName ? { name: name.trim() } : {}),
       ...patch,
     };
     try {
@@ -69,6 +83,29 @@ export default function PromoFeedbackForm({
 
   return (
     <div className="space-y-6 max-w-lg">
+      {askName && (
+        <div>
+          <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-1 text-[#999]">
+            Your name <span className="text-[#C8302B]">*</span>
+          </p>
+          <input
+            value={name}
+            onChange={e => { setName(e.target.value); if (needsName) setNeedsName(false); }}
+            // Flush whatever they already picked once a name exists, so stars
+            // clicked before typing are not lost.
+            onBlur={() => {
+              if (name.trim().length >= 2 && (rating > 0 || comment.trim() || favourite)) void persist({});
+            }}
+            maxLength={80}
+            placeholder="So I know whose feedback this is"
+            className="w-full bg-transparent border-0 border-b border-[#DDD] py-2 text-sm focus:outline-none transition-colors text-[#111] placeholder:text-[#C0BABC] focus:border-[#111]"
+          />
+          {needsName && (
+            <p className="mt-1.5 text-[11px] text-[#C8302B]">Put your name in first and it'll save.</p>
+          )}
+        </div>
+      )}
+
       {/* Rating */}
       <div>
         <p className="text-[10px] font-semibold tracking-[0.2em] uppercase mb-2 text-[#999]">
@@ -172,6 +209,11 @@ export default function PromoFeedbackForm({
       {/* Says exactly what's still missing, rather than a generic "locked" */}
       {required && !complete && (
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-[#888]">
+          {askName && (
+            <span className={nameReady ? 'text-[#C8302B]' : ''}>
+              {nameReady ? '✓' : '○'} Name
+            </span>
+          )}
           <span className={hasRating ? 'text-[#C8302B]' : ''}>
             {hasRating ? '✓' : '○'} Star rating
           </span>

@@ -180,6 +180,23 @@ export const api = {
     }),
   getPromoStats: (campaignId: number) =>
     request(`/promo/campaigns/${campaignId}/stats`, { headers: authHeaders() }),
+  /** Public: swaps a share token for a personal promo link. */
+  enterPromoShare: (shareToken: string) =>
+    request(`/promo/share/${shareToken}/enter`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }),
+  createPromoShareLink: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    }),
+  revokePromoShareLink: (campaignId: number) =>
+    request(`/promo/campaigns/${campaignId}/share`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }),
   getPromoPreviewUrl: (campaignId: number) =>
     request<{ url: string }>(`/promo/campaigns/${campaignId}/preview`, { headers: authHeaders() }),
 };

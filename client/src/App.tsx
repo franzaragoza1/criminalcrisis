@@ -13,6 +13,7 @@ import AdminPanel from './components/admin/AdminPanel';
 import GlobalPlayer from './components/player/GlobalPlayer';
 import PromoLanding from './components/promo/PromoLanding';
 import PromoApply from './components/promo/PromoApply';
+import PromoJoin from './components/promo/PromoJoin';
 import Unsubscribe from './components/promo/Unsubscribe';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { api } from './api';
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/" element={<PublicSite />} />
           {/* Order matters: the bare path is the application form, not a campaign */}
           <Route path="/promo" element={<PromoApply />} />
+          <Route path="/promo/join/:shareToken" element={<PromoJoin />} />
           <Route path="/promo/:slug" element={<PromoLanding />} />
           <Route path="/unsubscribe/:token" element={<Unsubscribe />} />
           <Route path="/admin" element={<AdminRoute />} />

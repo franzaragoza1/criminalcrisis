@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
-  ChevronUp, ChevronDown, Edit3, Eye, X, Pause,
+  ChevronUp, ChevronDown, Edit3, Eye, X, Pause, Link2, Copy,
 } from 'lucide-react';
 import { api } from '../../api';
 import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../types';
@@ -434,6 +434,23 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
     catch (e) { err(e); } finally { setBusy(false); }
   };
 
+  const makeShareLink = async () => {
+    setBusy(true);
+    try { await api.createPromoShareLink(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
+  const revokeShareLink = async () => {
+    if (!confirm(
+      'Kill the public link?\n\n' +
+      'Anyone who already opened it keeps their own link and their feedback. ' +
+      'Only new arrivals are turned away.'
+    )) return;
+    setBusy(true);
+    try { await api.revokePromoShareLink(campaign.id); refresh(); }
+    catch (e) { err(e); } finally { setBusy(false); }
+  };
+
   const cancelReminder = async () => {
     setBusy(true);
     try { await api.cancelPromoReminder(campaign.id); refresh(); }
@@ -448,6 +465,12 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
       alert(`Test sent to ${testEmail}. Check it in Gmail, Outlook and on mail-tester.com before the real send.`);
     } catch (e) { err(e); } finally { setBusy(false); }
   };
+
+  const [copied, setCopied] = useState(false);
+  const shareToken = stats?.campaign?.share_token;
+  // Built here rather than kept from the create call, so the link is visible on
+  // load without minting anything.
+  const shareUrl = shareToken ? `${window.location.origin}/promo/join/${shareToken}` : '';
 
   const t = stats?.totals;
   // From stats so pause/resume reflects immediately, not the stale list prop
@@ -738,6 +761,48 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                   </span>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* Public link */}
+          <div className="border-2 border-[#111] bg-white p-5">
+            <h3 className="text-sm font-bold text-[#111] mb-1 flex items-center gap-2">
+              <Link2 size={14} /> Public link
+            </h3>
+            <p className="text-xs text-[#888] mb-4">
+              One link you can give to anyone — no email needed. They open it and the music plays
+              straight away; no form in the way. Each person gets their own private link behind the
+              scenes, so their plays and their comment stay separate instead of overwriting each
+              other. They're asked their name only if they go to leave feedback, and they show up in
+              Results like everyone else.
+            </p>
+
+            {shareToken ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    readOnly
+                    value={shareUrl}
+                    onFocus={e => e.currentTarget.select()}
+                    className={`${INPUT_CLS} flex-1 min-w-[260px] font-mono text-xs`}
+                  />
+                  <button
+                    onClick={() => { void navigator.clipboard?.writeText(shareUrl); setCopied(true); }}
+                    className={`${BTN_SECONDARY} inline-flex items-center gap-2`}
+                  >
+                    <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <button onClick={() => void revokeShareLink()} disabled={busy}
+                        className="text-xs text-[#C8302B] hover:underline cursor-pointer">
+                  Kill this link
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => void makeShareLink()} disabled={busy}
+                      className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
+                <Link2 size={14} /> Create public link
+              </button>
             )}
           </div>
         </div>
