@@ -802,6 +802,7 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
          FROM promo_recipients r
          JOIN promo_contacts c ON c.id = r.contact_id
         WHERE r.campaign_id = $1
+          AND COALESCE(c.source, '') <> 'test'
         ORDER BY (r.first_visit_at IS NULL), r.first_visit_at DESC, c.email ASC`,
       [req.params.id]
     );
@@ -816,6 +817,7 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
     LEFT JOIN promo_tracks t     ON t.id = f.track_id
     LEFT JOIN promo_tracks fav   ON fav.id = f.favourite_track_id
         WHERE r.campaign_id = $1
+          AND COALESCE(c.source, '') <> 'test'
         ORDER BY f.created_at DESC`,
       [req.params.id]
     );
@@ -826,6 +828,8 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
       `SELECT t.id, t.title, COUNT(f.id)::int AS votes
          FROM promo_tracks t
     LEFT JOIN promo_feedback f ON f.favourite_track_id = t.id
+         AND EXISTS (SELECT 1 FROM promo_recipients r JOIN promo_contacts c ON c.id = r.contact_id
+                      WHERE r.id = f.recipient_id AND COALESCE(c.source,'') <> 'test')
         WHERE t.campaign_id = $1
      GROUP BY t.id, t.title
      ORDER BY votes DESC, t.position ASC`,
@@ -833,11 +837,19 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
     );
 
     const { rows: perTrack } = await pool.query(
-      `SELECT t.id, t.title,
-              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'play')     AS plays,
-              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'complete') AS completes,
-              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'download') AS downloads,
-              (SELECT ROUND(AVG(f.rating)::numeric, 2) FROM promo_feedback f WHERE f.track_id = t.id)    AS avg_rating
+      `WITH real_recipients AS (
+         SELECT r.id FROM promo_recipients r JOIN promo_contacts c ON c.id = r.contact_id
+          WHERE COALESCE(c.source,'') <> 'test'
+       )
+       SELECT t.id, t.title,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'play'
+                 AND e.recipient_id IN (SELECT id FROM real_recipients))     AS plays,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'complete'
+                 AND e.recipient_id IN (SELECT id FROM real_recipients))     AS completes,
+              (SELECT COUNT(*)::int FROM promo_events e WHERE e.track_id = t.id AND e.type = 'download'
+                 AND e.recipient_id IN (SELECT id FROM real_recipients))     AS downloads,
+              (SELECT ROUND(AVG(f.rating)::numeric, 2) FROM promo_feedback f WHERE f.track_id = t.id
+                 AND f.recipient_id IN (SELECT id FROM real_recipients))     AS avg_rating
          FROM promo_tracks t
         WHERE t.campaign_id = $1
         ORDER BY t.position ASC, t.id ASC`,
@@ -855,21 +867,36 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
       [req.params.id]
     );
 
+    // Two populations that must not be added together: people who were mailed,
+    // and people who walked in through the public link and were never mailed at
+    // all. Mixing them makes "Recipients" grow every time someone opens a shared
+    // link, and quietly changes the denominator of every rate below it.
+    const mailed = recipients.filter(r => r.source !== 'share');
+    const walkedIn = recipients.filter(r => r.source === 'share');
+
     const totals = {
-      recipients: recipients.length,
+      recipients: mailed.length,
       remindable: remindable.n,
-      reminderQueued: recipients.filter(r => r.reminder_status === 'queued').length,
-      reminderSent: recipients.filter(r => r.reminder_status === 'sent').length,
-      queued: recipients.filter(r => r.send_status === 'queued').length,
-      sent: recipients.filter(r => ['sent', 'delivered'].includes(r.send_status)).length,
-      delivered: recipients.filter(r => r.delivered_at).length,
-      bounced: recipients.filter(r => r.send_status === 'bounced').length,
-      failed: recipients.filter(r => r.send_status === 'failed').length,
-      skipped: recipients.filter(r => r.send_status === 'skipped').length,
-      visited: recipients.filter(r => r.first_visit_at).length,
-      played: recipients.filter(r => r.plays > 0).length,
-      downloaded: recipients.filter(r => r.downloads > 0).length,
-      feedback: feedback.length,
+      reminderQueued: mailed.filter(r => r.reminder_status === 'queued').length,
+      reminderSent: mailed.filter(r => r.reminder_status === 'sent').length,
+      queued: mailed.filter(r => r.send_status === 'queued').length,
+      // A bounce is a message that went out and came back, so it was sent. Only
+      // 'failed' never left. Excluding bounces made Sent read lower than the
+      // number of emails actually handed to Resend.
+      sent: mailed.filter(r => ['sent', 'delivered', 'bounced'].includes(r.send_status)).length,
+      delivered: mailed.filter(r => r.delivered_at).length,
+      bounced: mailed.filter(r => r.send_status === 'bounced').length,
+      failed: mailed.filter(r => r.send_status === 'failed').length,
+      skipped: mailed.filter(r => r.send_status === 'skipped').length,
+      visited: mailed.filter(r => r.first_visit_at).length,
+      played: mailed.filter(r => r.plays > 0).length,
+      downloaded: mailed.filter(r => r.downloads > 0).length,
+      // People, not rows: someone who rates the release and a track separately
+      // is one opinion, not two.
+      feedback: new Set(feedback.filter(f => f.source !== 'share').map(f => f.email)).size,
+      shareArrived: walkedIn.length,
+      sharePlayed: walkedIn.filter(r => r.plays > 0).length,
+      shareFeedback: new Set(feedback.filter(f => f.source === 'share').map(f => f.email)).size,
     };
 
     res.json({ campaign: campaignRows[0], totals, recipients, feedback, perTrack, favourites });

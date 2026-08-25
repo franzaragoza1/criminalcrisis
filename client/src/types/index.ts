@@ -133,6 +133,8 @@ export interface PromoStats {
     visited: number; played: number; downloaded: number; feedback: number;
     /** Got the first mail, never visited, not reminded yet — the reminder's audience. */
     remindable: number; reminderQueued: number; reminderSent: number;
+    /** People who walked in through the public link and were never mailed. */
+    shareArrived: number; sharePlayed: number; shareFeedback: number;
   };
   recipients: Array<{
     id: number; email: string; name?: string; role?: string; company?: string;

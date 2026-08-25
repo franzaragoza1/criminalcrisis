@@ -811,9 +811,9 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
           {/* Funnel */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             {[
-              { label: 'Recipients', value: t?.recipients ?? 0 },
+              { label: 'Mailed', value: t?.recipients ?? 0 },
               { label: 'Sent', value: t?.sent ?? 0 },
-              { label: 'Delivered', value: t?.delivered ?? 0 },
+              { label: 'Confirmed', value: t?.delivered ?? 0 },
               { label: 'Opened page', value: t?.visited ?? 0 },
               { label: 'Played', value: t?.played ?? 0 },
               { label: 'Downloaded', value: t?.downloaded ?? 0 },
@@ -823,6 +823,30 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
                 <p className="text-2xl font-bold text-[#111]">{s.value}</p>
               </div>
             ))}
+          </div>
+
+          <div className="space-y-1.5 -mt-3">
+            {/* Delivery confirmation arrives by webhook, and the free tier sleeps.
+                Saying "Confirmed" instead of "Delivered" stops the gap reading as
+                mail that never arrived. */}
+            {(t?.sent ?? 0) > (t?.delivered ?? 0) && (
+              <p className="text-[11px] text-[#888]">
+                <strong className="text-[#111]">Confirmed</strong> counts only what Resend's webhook told us
+                about. The server sleeps on the free tier and misses some of those, so the number that actually
+                landed is higher than {t?.delivered ?? 0}.
+              </p>
+            )}
+            {(t?.shareArrived ?? 0) > 0 && (
+              <p className="text-[11px] text-[#888]">
+                Plus <strong className="text-[#111]">{t?.shareArrived}</strong> who came in through the public
+                link and were never mailed — {t?.sharePlayed ?? 0} played
+                {(t?.shareFeedback ?? 0) > 0 ? `, ${t?.shareFeedback} left feedback` : ''}. They're in the table
+                below but not in the counts above, so the rates keep their denominator.
+              </p>
+            )}
+            <p className="text-[11px] text-[#888]">
+              Your own test sends are excluded from all of this.
+            </p>
           </div>
 
           {(t?.bounced || t?.failed) ? (
