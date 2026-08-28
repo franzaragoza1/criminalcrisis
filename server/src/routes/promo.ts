@@ -888,12 +888,17 @@ router.get('/campaigns/:id/stats', authMiddleware, async (req, res) => {
       bounced: mailed.filter(r => r.send_status === 'bounced').length,
       failed: mailed.filter(r => r.send_status === 'failed').length,
       skipped: mailed.filter(r => r.send_status === 'skipped').length,
-      visited: mailed.filter(r => r.first_visit_at).length,
-      played: mailed.filter(r => r.plays > 0).length,
-      downloaded: mailed.filter(r => r.downloads > 0).length,
+      // Engagement counts everyone in the table, share-link arrivals included.
+      // Only the three tiles above are mailed-only, because "never mailed" must
+      // not enlarge the denominator of a delivery rate. Someone who genuinely
+      // played and downloaded did so whichever door they came through, and a
+      // tile reading 0 above a table showing 4 is just wrong.
+      visited: recipients.filter(r => r.first_visit_at).length,
+      played: recipients.filter(r => r.plays > 0).length,
+      downloaded: recipients.filter(r => r.downloads > 0).length,
       // People, not rows: someone who rates the release and a track separately
       // is one opinion, not two.
-      feedback: new Set(feedback.filter(f => f.source !== 'share').map(f => f.email)).size,
+      feedback: new Set(feedback.map(f => f.email)).size,
       shareArrived: walkedIn.length,
       sharePlayed: walkedIn.filter(r => r.plays > 0).length,
       shareFeedback: new Set(feedback.filter(f => f.source === 'share').map(f => f.email)).size,

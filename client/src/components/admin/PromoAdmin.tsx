@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Upload, Download, Trash2, Plus, ArrowLeft, Send, Mail, BarChart3,
   Users, CheckCircle2, AlertTriangle, Music, RefreshCw, UserPlus,
@@ -9,6 +9,37 @@ import type { PromoContact, PromoCampaign, PromoStats, Release } from '../../typ
 import { INPUT_CLS, LABEL_CLS, BTN_PRIMARY, BTN_SECONDARY } from './adminStyles';
 
 const err = (e: unknown) => alert(e instanceof Error ? e.message : String(e));
+
+type RecipientRow = PromoStats['recipients'][number];
+type SortKey = 'contact' | 'send_status' | 'first_visit_at' | 'plays' | 'downloads' | 'feedback_count';
+
+/**
+ * Every column with more than one possible value is sortable. `null` means the
+ * actions column, which has nothing to order by.
+ *
+ * `desc` is the direction a column opens on: counts and dates are interesting
+ * from the top down (who played most, who turned up last), names from A to Z.
+ */
+const RESULT_COLUMNS: Array<{ key: SortKey | null; label: string; desc: boolean }> = [
+  { key: 'contact', label: 'Contact', desc: false },
+  { key: 'send_status', label: 'Status', desc: false },
+  { key: 'first_visit_at', label: 'Visited', desc: true },
+  { key: 'plays', label: 'Plays', desc: true },
+  { key: 'downloads', label: 'Downloads', desc: true },
+  { key: 'feedback_count', label: 'Feedback', desc: true },
+  { key: null, label: '', desc: false },
+];
+
+/** Never-visited sorts below every real date in both directions, rather than
+ *  landing at one end as an empty string would. */
+function sortValue(r: RecipientRow, key: SortKey): string | number {
+  switch (key) {
+    case 'contact': return (r.name || r.email).toLowerCase();
+    case 'send_status': return r.send_status;
+    case 'first_visit_at': return r.first_visit_at ? Date.parse(r.first_visit_at) : -Infinity;
+    default: return r[key];
+  }
+}
 
 // ─── Contacts ─────────────────────────────────────────────────────────────────
 
@@ -467,10 +498,25 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
   };
 
   const [copied, setCopied] = useState(false);
+  // null = the order the server sent, which already floats visitors to the top.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const shareToken = stats?.campaign?.share_token;
   // Built here rather than kept from the create call, so the link is visible on
   // load without minting anything.
   const shareUrl = shareToken ? `${window.location.origin}/promo/join/${shareToken}` : '';
+
+  const sortedRecipients = useMemo(() => {
+    const list = stats?.recipients ?? [];
+    if (!sort) return list;
+    // Array.sort is stable, so rows that tie keep the server's ordering.
+    return [...list].sort((a, b) => {
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      if (av < bv) return -sort.dir;
+      if (av > bv) return sort.dir;
+      return 0;
+    });
+  }, [stats, sort]);
 
   const t = stats?.totals;
   // From stats so pause/resume reflects immediately, not the stale list prop
@@ -840,8 +886,9 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
               <p className="text-[11px] text-[#888]">
                 Plus <strong className="text-[#111]">{t?.shareArrived}</strong> who came in through the public
                 link and were never mailed — {t?.sharePlayed ?? 0} played
-                {(t?.shareFeedback ?? 0) > 0 ? `, ${t?.shareFeedback} left feedback` : ''}. They're in the table
-                below but not in the counts above, so the rates keep their denominator.
+                {(t?.shareFeedback ?? 0) > 0 ? `, ${t?.shareFeedback} left feedback` : ''}. They count in
+                Opened, Played, Downloaded and Feedback, but not in Mailed, Sent or Confirmed — nothing was
+                sent to them, so counting them there would flatter the delivery rates.
               </p>
             )}
             <p className="text-[11px] text-[#888]">
@@ -923,13 +970,31 @@ function CampaignDetail({ campaign, onBack }: { campaign: PromoCampaign; onBack:
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#E0E0E0] text-left">
-                  {['Contact', 'Status', 'Visited', 'Plays', 'Downloads', 'Feedback', ''].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#888]">{h}</th>
-                  ))}
+                  {RESULT_COLUMNS.map(col => {
+                    const active = sort?.key === col.key;
+                    return (
+                      <th key={col.label} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#888]">
+                        {col.key ? (
+                          <button
+                            onClick={() => setSort(prev =>
+                              prev?.key === col.key
+                                ? { key: col.key!, dir: prev.dir === 1 ? -1 : 1 }
+                                : { key: col.key!, dir: col.desc ? -1 : 1 })}
+                            className={`inline-flex items-center gap-1 uppercase tracking-[0.12em] transition-colors cursor-pointer hover:text-[#111] ${active ? 'text-[#111]' : ''}`}
+                          >
+                            {col.label}
+                            {active
+                              ? (sort!.dir === 1 ? <ChevronUp size={12} /> : <ChevronDown size={12} />)
+                              : <ChevronDown size={12} className="opacity-0 group-hover:opacity-100" />}
+                          </button>
+                        ) : col.label}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {stats?.recipients.map(r => (
+                {sortedRecipients.map(r => (
                   <tr key={r.id} className="border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA]">
                     <td className="px-4 py-2.5">
                       <span className="text-[#111] flex items-center gap-1.5">
