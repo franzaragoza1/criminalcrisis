@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initDb } from './db/database.js';
+import { initDb, pool } from './db/database.js';
 import authRoutes from './routes/auth.js';
 import artistRoutes from './routes/artists.js';
 import releaseRoutes from './routes/releases.js';
@@ -54,7 +54,30 @@ app.use('/api/hero', heroRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/promo', promoRoutes);
 
-app.get('/api/health', (_, res) => res.json({ ok: true }));
+/**
+ * Keep-alive target as well as a health check, which is why it touches the
+ * database.
+ *
+ * Two things hibernate independently here: Render's web service sleeps after
+ * ~15 minutes idle, and Neon suspends its compute after ~5. A ping that only
+ * proves Express is listening wakes the first and never the second, so the
+ * first real page load still pays for waking the database.
+ *
+ * It answers 200 even when the query fails, on purpose. An uptime pinger that
+ * sees repeated non-2xx responses disables the job, and a disabled pinger is
+ * how the server ends up asleep for good — exactly the failure this endpoint
+ * exists to prevent. The `db` field carries the bad news instead.
+ */
+app.get('/api/health', async (_, res) => {
+  const started = Date.now();
+  try {
+    await pool.query('SELECT 1');
+    res.json({ ok: true, db: 'up', ms: Date.now() - started });
+  } catch (e: any) {
+    console.error('[health] database unreachable:', e.message);
+    res.json({ ok: true, db: 'down', ms: Date.now() - started });
+  }
+});
 
 (async () => {
   try {
