@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send, Menu } from 'lucide-react';
+import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send, Menu, Link2 } from 'lucide-react';
 import { api } from '../../api';
 import type { Artist, Release, Event } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 import PromoAdmin from './PromoAdmin';
+import LinkPageAdmin from './LinkPageAdmin';
 
-type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo';
+type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo' | 'linkpage';
 
 // ─── Reusable components ──────────────────────────────────────────────────────
 
@@ -698,6 +699,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     { id: 'artists', label: 'Artists', icon: <Users size={16} /> },
     { id: 'events', label: 'Events', icon: <Calendar size={16} /> },
     { id: 'promo', label: 'Promo Pool', icon: <Send size={16} /> },
+    { id: 'linkpage', label: 'frankydrama', icon: <Link2 size={16} /> },
   ];
 
   const current = navItems.find(i => i.id === section);
@@ -770,6 +772,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         {section === 'artists' && <ArtistsAdmin />}
         {section === 'events' && <EventsAdmin />}
         {section === 'promo' && <PromoAdmin />}
+        {section === 'linkpage' && <LinkPageAdmin />}
       </main>
     </div>
   );

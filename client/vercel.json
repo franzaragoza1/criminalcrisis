@@ -1,3 +1,7 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/frankydrama", "destination": "/api/frankydrama" },
+    { "source": "/frankydrama/", "destination": "/api/frankydrama" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

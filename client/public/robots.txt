@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Private or token-gated areas. /promo itself is the public application form and
+# stays crawlable; everything under it is somebody's personal promo link.
+Disallow: /admin
+Disallow: /promo/
+Disallow: /unsubscribe/
+
+Sitemap: https://www.criminalcrisis.com/sitemap.xml

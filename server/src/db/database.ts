@@ -80,6 +80,31 @@ export async function initDb() {
   `);
 
   // ---------------------------------------------------------------------------
+  // Link pages
+  // ---------------------------------------------------------------------------
+
+  // Standalone link-in-bio pages (today only /frankydrama). The ordered
+  // collections live as JSON in a TEXT column, the way releases.tracklist and
+  // events.lineup already do: the array order *is* the display order, so
+  // reordering a button is an array move rather than a schema concern.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS link_pages (
+      id SERIAL PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      tagline TEXT,
+      city TEXT,
+      alternate_name TEXT,
+      seo_title TEXT,
+      seo_description TEXT,
+      og_image_url TEXT,
+      buttons TEXT DEFAULT '[]',
+      footer_links TEXT DEFAULT '[]',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ---------------------------------------------------------------------------
   // Promo pool
   // ---------------------------------------------------------------------------
 
@@ -255,6 +280,8 @@ export async function initDb() {
     console.log('Default admin created: admin / criminal2024');
   }
 
+  await seedLinkPages();
+
   await seedIfEmpty();
 }
 
@@ -314,4 +341,50 @@ async function seedIfEmpty() {
   }
 
   console.log(`Seeded ${seedArtists.length} artists and ${seedReleases.length} releases.`);
+}
+
+// ---------------------------------------------------------------------------
+// Link pages
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the /frankydrama row on first boot and never touches it again.
+ *
+ * These values exist only to give the admin form something to open on day one.
+ * Everything here is editable at /admin → frankydrama, and re-running this
+ * function must never overwrite an edit — hence ON CONFLICT DO NOTHING rather
+ * than an upsert.
+ */
+async function seedLinkPages() {
+  await pool.query(
+    `INSERT INTO link_pages
+       (slug, display_name, tagline, city, alternate_name,
+        seo_title, seo_description, og_image_url, buttons, footer_links)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     ON CONFLICT (slug) DO NOTHING`,
+    [
+      'frankydrama',
+      'frankydrama',
+      'mostly making music, sometimes playing tunes',
+      'Madrid',
+      'Fran Zaragoza',
+      'frankydrama — Producer & DJ, Madrid | Leftfield Bass, Broken Rhythms',
+      'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
+      'https://f4.bcbits.com/img/0037962526_23.jpg',
+      JSON.stringify([
+        { label: 'Club Tools Vol. 1', url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', note: 'Latest release' },
+        { label: 'SoundCloud', url: 'https://soundcloud.com/frankydrama' },
+        { label: 'Bandcamp', url: 'https://frankydrama.bandcamp.com/' },
+        { label: 'Resident Advisor', url: 'https://es.ra.co/dj/frankydrama' },
+        { label: 'Beatport', url: 'https://www.beatport.com/artist/frankydrama/1148532' },
+        { label: 'Spotify', url: 'https://open.spotify.com/artist/3KOEZox4Auk4LwRbhaySBz' },
+        { label: 'Instagram', url: 'https://www.instagram.com/itsfrankydrama/' },
+      ]),
+      JSON.stringify([
+        { label: 'Criminal Crisis', url: 'https://criminalcrisis.com' },
+        { label: 'Vinyl — Strictly Human / Pseudo Stories', url: 'https://elasticstage.com/frankydrama/releases/strictly-human-pseudo-stories-album' },
+        { label: 'fran@criminalcrisis.com', url: 'mailto:fran@criminalcrisis.com' },
+      ]),
+    ]
+  );
 }
