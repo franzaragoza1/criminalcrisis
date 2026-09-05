@@ -9,6 +9,7 @@ import artistRoutes from './routes/artists.js';
 import releaseRoutes from './routes/releases.js';
 import eventRoutes from './routes/events.js';
 import heroRoutes from './routes/hero.js';
+import linkPageRoutes from './routes/linkPage.js';
 import contactRoutes from './routes/contact.js';
 import promoRoutes, { handleResendWebhook } from './routes/promo.js';
 import { createPaymentIntent, handleStripeWebhook } from './controllers/paymentController.js';
@@ -51,6 +52,7 @@ app.use('/api/artists', artistRoutes);
 app.use('/api/releases', releaseRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/hero', heroRoutes);
+app.use('/api/link-page', linkPageRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/promo', promoRoutes);
 

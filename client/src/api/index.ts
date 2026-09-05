@@ -1,3 +1,5 @@
+import type { LinkPage } from '../types';
+
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -61,6 +63,11 @@ export const api = {
   // Admin - Hero
   updateHero: (data: FormData) =>
     request('/hero', { method: 'PUT', headers: authHeaders(), body: data }),
+
+  // --- Link pages (/frankydrama) ---
+  getLinkPage: (slug: string) => request<LinkPage>(`/link-page/${slug}`),
+  updateLinkPage: (slug: string, data: FormData) =>
+    request<LinkPage>(`/link-page/${slug}`, { method: 'PUT', headers: authHeaders(), body: data }),
 
   // --- Promo pool: public (token-gated, no login) ---
   getPromo: (slug: string, k: string) =>

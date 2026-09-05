@@ -43,6 +43,30 @@ export interface HeroContent {
   featured_release?: Release;
 }
 
+// --- Link pages ------------------------------------------------------------
+
+/** One row of an editable link list. `note` is an optional eyebrow above the label. */
+export interface LinkItem {
+  label: string;
+  url: string;
+  note?: string;
+}
+
+/** The /frankydrama page, edited whole in one form. Array order is display order. */
+export interface LinkPage {
+  slug: string;
+  display_name: string;
+  tagline?: string;
+  city?: string;
+  alternate_name?: string;
+  seo_title?: string;
+  seo_description?: string;
+  og_image_url?: string;
+  buttons: LinkItem[];
+  footer_links: LinkItem[];
+  updated_at?: string;
+}
+
 // --- Promo pool ------------------------------------------------------------
 
 export type ContactStatus =
