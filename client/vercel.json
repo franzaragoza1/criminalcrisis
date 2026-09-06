@@ -1,7 +1,9 @@
 {
   "rewrites": [
-    { "source": "/frankydrama", "destination": "/api/frankydrama" },
-    { "source": "/frankydrama/", "destination": "/api/frankydrama" },
+    { "source": "/frankydrama", "destination": "/api/link-page?slug=frankydrama" },
+    { "source": "/frankydrama/", "destination": "/api/link-page?slug=frankydrama" },
+    { "source": "/links", "destination": "/api/link-page?slug=links" },
+    { "source": "/links/", "destination": "/api/link-page?slug=links" },
     { "source": "/promo", "destination": "/index.html" },
     { "source": "/promo/:path*", "destination": "/index.html" },
     { "source": "/unsubscribe", "destination": "/index.html" },

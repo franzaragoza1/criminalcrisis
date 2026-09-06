@@ -6,7 +6,7 @@ import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 import PromoAdmin from './PromoAdmin';
 import LinkPageAdmin from './LinkPageAdmin';
 
-type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo' | 'linkpage';
+type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo' | 'linkpage' | 'linkpage-label';
 
 // ─── Reusable components ──────────────────────────────────────────────────────
 
@@ -700,6 +700,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     { id: 'events', label: 'Events', icon: <Calendar size={16} /> },
     { id: 'promo', label: 'Promo Pool', icon: <Send size={16} /> },
     { id: 'linkpage', label: 'frankydrama', icon: <Link2 size={16} /> },
+    { id: 'linkpage-label', label: 'Links del sello', icon: <Link2 size={16} /> },
   ];
 
   const current = navItems.find(i => i.id === section);
@@ -772,7 +773,8 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         {section === 'artists' && <ArtistsAdmin />}
         {section === 'events' && <EventsAdmin />}
         {section === 'promo' && <PromoAdmin />}
-        {section === 'linkpage' && <LinkPageAdmin />}
+        {section === 'linkpage' && <LinkPageAdmin slug="frankydrama" title="frankydrama" />}
+        {section === 'linkpage-label' && <LinkPageAdmin slug="links" title="Links del sello" />}
       </main>
     </div>
   );

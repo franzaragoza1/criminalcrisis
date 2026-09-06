@@ -59,6 +59,8 @@ export interface LinkPage {
   tagline?: string;
   city?: string;
   alternate_name?: string;
+  /** schema.org type for the JSON-LD: an artist page vs the label's own. */
+  schema_type?: 'MusicGroup' | 'Organization';
   /** Portrait shown on the page. og_image_url is the share card, not this. */
   photo_url?: string;
   seo_title?: string;

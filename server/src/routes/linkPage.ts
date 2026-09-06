@@ -61,6 +61,7 @@ function serialize(row: Record<string, any>) {
     tagline: row.tagline,
     city: row.city,
     alternate_name: row.alternate_name,
+    schema_type: row.schema_type,
     photo_url: row.photo_url,
     seo_title: row.seo_title,
     seo_description: row.seo_description,
