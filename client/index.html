@@ -8,6 +8,30 @@
     <meta property="og:title" content="Criminal Crisis" />
     <meta property="og:description" content="Banging Boogie Bangers" />
     <title>Criminal Crisis</title>
+    <!--
+      Organization, not MusicLabel: schema.org has no MusicLabel type, so it
+      would have been ignored. Every value here is copied from something already
+      in the repo — the meta description above, and the label's own profile
+      links in components/layout/Footer.tsx. Fields that could not be confirmed
+      from the codebase (founding date, postal address) are left out on purpose:
+      a wrong value in structured data is worse than a missing one.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Criminal Crisis",
+        "url": "https://www.criminalcrisis.com",
+        "logo": "https://www.criminalcrisis.com/img/logos/logotipo5_criminalCrisis@2x.png",
+        "description": "Criminal Crisis — Underground Electronic Music Label. Madrid. UK Bass, Techno, House, Breaks.",
+        "sameAs": [
+          "https://www.instagram.com/criminalcrisis/",
+          "https://soundcloud.com/criminal_crisis",
+          "https://www.beatport.com/es/label/criminal-crisis/115183",
+          "https://criminalcrisis.bandcamp.com"
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
