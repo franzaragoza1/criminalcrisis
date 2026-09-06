@@ -61,6 +61,7 @@ function serialize(row: Record<string, any>) {
     tagline: row.tagline,
     city: row.city,
     alternate_name: row.alternate_name,
+    photo_url: row.photo_url,
     seo_title: row.seo_title,
     seo_description: row.seo_description,
     og_image_url: row.og_image_url,
@@ -85,7 +86,16 @@ router.get('/:slug', async (req, res) => {
 });
 
 // Admin. One save covers the whole page: text, buttons, footer and SEO.
-router.put('/:slug', authMiddleware, upload.single('og_image'), async (req, res) => {
+router.put(
+  '/:slug',
+  authMiddleware,
+  // Two independent images: the portrait on the page, and the card other apps
+  // render when the link is shared. Either, both or neither may be replaced.
+  upload.fields([
+    { name: 'og_image', maxCount: 1 },
+    { name: 'photo', maxCount: 1 },
+  ]),
+  async (req, res) => {
   try {
     const existingResult = await pool.query('SELECT * FROM link_pages WHERE slug = $1', [req.params.slug]);
     if (existingResult.rows.length === 0) {
@@ -102,9 +112,16 @@ router.put('/:slug', authMiddleware, upload.single('og_image'), async (req, res)
       ? existing.footer_links
       : JSON.stringify(parseItems(b.footer_links, MAX_FOOTER_LINKS));
 
-    const ogImage = req.file
-      ? await uploadToCloudinary(req.file.buffer, 'link-pages')
+    const files = (req.files ?? {}) as Record<string, Express.Multer.File[] | undefined>;
+    const ogFile = files.og_image?.[0];
+    const photoFile = files.photo?.[0];
+
+    const ogImage = ogFile
+      ? await uploadToCloudinary(ogFile.buffer, 'link-pages')
       : existing.og_image_url;
+    const photo = photoFile
+      ? await uploadToCloudinary(photoFile.buffer, 'link-pages')
+      : existing.photo_url;
 
     // `??` and not `||`: clearing the city field must actually clear it, and an
     // empty string is a legitimate value here.
@@ -113,9 +130,9 @@ router.put('/:slug', authMiddleware, upload.single('og_image'), async (req, res)
     await pool.query(
       `UPDATE link_pages SET
          display_name = $1, tagline = $2, city = $3, alternate_name = $4,
-         seo_title = $5, seo_description = $6, og_image_url = $7,
-         buttons = $8, footer_links = $9, updated_at = NOW()
-       WHERE slug = $10`,
+         seo_title = $5, seo_description = $6, og_image_url = $7, photo_url = $8,
+         buttons = $9, footer_links = $10, updated_at = NOW()
+       WHERE slug = $11`,
       [
         pick(b.display_name, existing.display_name) || existing.display_name,
         pick(b.tagline, existing.tagline),
@@ -124,6 +141,7 @@ router.put('/:slug', authMiddleware, upload.single('og_image'), async (req, res)
         pick(b.seo_title, existing.seo_title),
         pick(b.seo_description, existing.seo_description),
         ogImage,
+        photo,
         buttons,
         footerLinks,
         req.params.slug,
@@ -135,6 +153,7 @@ router.put('/:slug', authMiddleware, upload.single('og_image'), async (req, res)
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
-});
+  }
+);
 
 export default router;

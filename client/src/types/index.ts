@@ -59,6 +59,8 @@ export interface LinkPage {
   tagline?: string;
   city?: string;
   alternate_name?: string;
+  /** Portrait shown on the page. og_image_url is the share card, not this. */
+  photo_url?: string;
   seo_title?: string;
   seo_description?: string;
   og_image_url?: string;

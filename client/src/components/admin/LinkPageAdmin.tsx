@@ -150,6 +150,7 @@ function Fieldset({ title, hint, children }: { title: string; hint?: string; chi
 export default function LinkPageAdmin() {
   const [page, setPage] = useState<LinkPage | null>(null);
   const [ogImage, setOgImage] = useState<File | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
   const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'error'>('loading');
   const [error, setError] = useState('');
 
@@ -185,11 +186,13 @@ export default function LinkPageAdmin() {
     fd.append('buttons', JSON.stringify(page.buttons));
     fd.append('footer_links', JSON.stringify(page.footer_links));
     if (ogImage) fd.append('og_image', ogImage);
+    if (photo) fd.append('photo', photo);
 
     try {
       const saved = await api.updateLinkPage(SLUG, fd);
       setPage(saved);
       setOgImage(null);
+      setPhoto(null);
       setStatus('saved');
       setTimeout(() => setStatus('idle'), 3000);
     } catch (e2) {
@@ -220,7 +223,7 @@ export default function LinkPageAdmin() {
       </p>
 
       <form onSubmit={save}>
-        <Fieldset title="Texto visible" hint="Lo único que se lee en pantalla.">
+        <Fieldset title="Lo que se ve en la página" hint="El nombre, la foto y las dos líneas de debajo.">
           <div className="space-y-4">
             <div>
               <label className={LABEL_CLS}>Nombre</label>
@@ -230,6 +233,27 @@ export default function LinkPageAdmin() {
                 className={INPUT_CLS}
               />
             </div>
+            <div>
+              <label className={LABEL_CLS}>Foto</label>
+              {page.photo_url && (
+                <img
+                  src={page.photo_url}
+                  alt=""
+                  className="w-56 aspect-[1.91/1] object-cover border border-[#E8E8E8] mb-2"
+                />
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={e => setPhoto(e.target.files?.[0] || null)}
+                className="text-sm text-[#888]"
+              />
+              <p className="text-xs text-[#999] mt-1">
+                Sale debajo del nombre. Se recorta a formato apaisado, así que usa una
+                horizontal — a lo ancho, unos 1200 px o más.
+              </p>
+            </div>
+
             <div>
               <label className={LABEL_CLS}>Frase</label>
               <input
