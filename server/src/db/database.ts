@@ -95,6 +95,9 @@ export async function initDb() {
       tagline TEXT,
       city TEXT,
       alternate_name TEXT,
+      -- The portrait shown on the page itself, as opposed to og_image_url,
+      -- which is the card other apps render when the link is shared.
+      photo_url TEXT,
       seo_title TEXT,
       seo_description TEXT,
       og_image_url TEXT,
@@ -232,6 +235,7 @@ export async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS promo_contacts_status_idx ON promo_contacts (status)`);
 
   // Safe migrations — add new columns if they don't exist yet
+  await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS photo_url TEXT`);
   await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);
   await pool.query(`ALTER TABLE promo_tracks ADD COLUMN IF NOT EXISTS mp3_public_id TEXT`);
@@ -358,9 +362,9 @@ async function seedIfEmpty() {
 async function seedLinkPages() {
   await pool.query(
     `INSERT INTO link_pages
-       (slug, display_name, tagline, city, alternate_name,
+       (slug, display_name, tagline, city, alternate_name, photo_url,
         seo_title, seo_description, og_image_url, buttons, footer_links)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (slug) DO NOTHING`,
     [
       'frankydrama',
@@ -368,6 +372,7 @@ async function seedLinkPages() {
       'mostly making music, sometimes playing tunes',
       'Madrid',
       'Fran Zaragoza',
+      '/img/frankydrama.jpg',
       'frankydrama | Electronic Music Artist, Audio Engineer',
       'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
       'https://f4.bcbits.com/img/0037962526_23.jpg',

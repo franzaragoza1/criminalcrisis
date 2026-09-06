@@ -88,6 +88,19 @@ a { color: inherit; text-decoration: none; }
   text-transform: uppercase;
 }
 @media (min-width: 40em) { .identity h1 { font-size: 3.5rem; } }
+/* aspect-ratio rather than width/height attributes: the portrait is editable
+   from the admin, so the slot has to reserve its space without knowing the
+   dimensions of whatever gets uploaded next. cover crops a stray portrait-
+   orientation upload instead of blowing the layout apart. */
+.portrait {
+  display: block;
+  width: 100%;
+  margin: 1.75rem 0 0;
+  aspect-ratio: 1.91 / 1;
+  object-fit: cover;
+  background: #F0F0F0;
+}
+
 .tagline {
   margin: 1rem 0 0;
   font-size: 0.9375rem;
@@ -167,6 +180,10 @@ function renderPage(page) {
   const title = page.seo_title || name;
   const description = page.seo_description || '';
   const image = page.og_image_url || '';
+  const photo = page.photo_url || '';
+  // Naming both aliases gives Google Images something to match either query
+  // against, which is the whole point of the page.
+  const portraitAlt = page.alternate_name ? name + ' (' + page.alternate_name + ')' : name;
 
   const buttons = (page.buttons || [])
     .map(b => ({ ...b, url: safeUrl(b.url) }))
@@ -235,6 +252,11 @@ function renderPage(page) {
     '  <main class="wrap">',
     '    <header class="identity">',
     '      <h1>' + esc(name) + '</h1>',
+    // Eager, not lazy: this is the largest thing above the fold, so deferring it
+    // would only push out LCP on the phone screen this page is built for.
+    photo
+      ? '      <img class="portrait" src="' + esc(photo) + '" alt="' + esc(portraitAlt) + '" decoding="async" fetchpriority="high">'
+      : null,
     page.tagline ? '      <p class="tagline">' + esc(page.tagline) + '</p>' : null,
     page.city ? '      <p class="city">' + esc(page.city) + '</p>' : null,
     '    </header>',
