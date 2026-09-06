@@ -1,4 +1,20 @@
 <!doctype html>
+<!--
+  Vercel serves this file, with a real 404 status, for any path that matches
+  neither a static file nor a rewrite in vercel.json.
+
+  That makes vercel.json's rewrite list load-bearing: it enumerates the routes
+  declared in src/App.tsx, because a catch-all would send made-up URLs to
+  index.html and answer 200 with the React not-found screen — a soft 404, which
+  Google indexes as a real page. Add a route to App.tsx and it has to be added
+  to vercel.json too, or it will land here instead.
+
+  (The note lives here because vercel.json is validated against a strict schema
+  that rejects unknown keys, so it cannot carry a comment of its own.)
+
+  The React NotFound component still exists and still handles navigation that
+  happens inside the already-loaded app; this file is only for the first hit.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">

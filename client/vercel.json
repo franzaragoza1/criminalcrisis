@@ -1,5 +1,4 @@
 {
-  "_comment": "Routes are listed one by one instead of a catch-all. A catch-all rewrote every path to index.html, so a made-up URL answered 200 with the React not-found screen — a soft 404 that Google treats as a real page. Anything not matched here now falls through to 404.html with a real 404 status. Every entry below is a route declared in src/App.tsx; adding a route there means adding it here too.",
   "rewrites": [
     { "source": "/frankydrama", "destination": "/api/frankydrama" },
     { "source": "/frankydrama/", "destination": "/api/frankydrama" },
