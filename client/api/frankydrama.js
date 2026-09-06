@@ -193,7 +193,6 @@ function renderPage(page) {
     url: CANONICAL,
     ...(image ? { image } : {}),
     ...(page.city ? { foundingLocation: { '@type': 'Place', name: page.city } } : {}),
-    genre: ['Leftfield Bass', 'Broken Beat', 'UK Bass', 'Techno'],
     ...(sameAs.length ? { sameAs } : {}),
   };
 

@@ -368,7 +368,7 @@ async function seedLinkPages() {
       'mostly making music, sometimes playing tunes',
       'Madrid',
       'Fran Zaragoza',
-      'frankydrama — Producer & DJ, Madrid | Leftfield Bass, Broken Rhythms',
+      'frankydrama | Electronic Music Artist, Audio Engineer',
       'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
       'https://f4.bcbits.com/img/0037962526_23.jpg',
       JSON.stringify([
