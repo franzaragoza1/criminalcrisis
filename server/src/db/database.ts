@@ -417,7 +417,6 @@ async function seedLinkPages() {
         { label: 'Instagram', url: 'https://www.instagram.com/criminalcrisis/' },
         { label: 'Shop', url: 'https://www.criminalcrisis.com/#shop' },
         { label: 'Promo Pool', url: 'https://www.criminalcrisis.com/promo' },
-        { label: 'frankydrama', url: 'https://www.criminalcrisis.com/frankydrama' },
       ],
       footer_links: [
         { label: 'criminalcrisis.com', url: 'https://www.criminalcrisis.com' },
