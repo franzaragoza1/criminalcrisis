@@ -1,16 +1,18 @@
 /**
- * Server-rendered /frankydrama.
+ * Server-rendered link pages: /frankydrama, /links, and any other row added to
+ * link_pages. Which one to render arrives as ?slug=, set by the rewrite in
+ * vercel.json.
  *
  * The rest of the site is a client-rendered SPA behind a single static
  * index.html, which is fine for pages nobody needs to find on Google. This one
- * is the opposite: its whole job is to rank for "frankydrama" and to produce a
+ * These are the opposite: their job is to rank for a name and to produce a
  * correct share card when the link is pasted into Instagram, WhatsApp or X.
  * Those scrapers do not run JavaScript, so a React route would hand them an
- * empty document carrying the label's generic title. Hence a real HTML response.
+ * empty document carrying the site's generic title. Hence a real HTML response.
  *
- * Content comes from the admin (GET /api/link-page/frankydrama) on every cache
- * revalidation, so editing a button never needs a deploy. Nothing on this page
- * is hardcoded except the error fallback at the bottom.
+ * Content comes from the admin (GET /api/link-page/:slug) on every cache
+ * revalidation, so editing a button never needs a deploy. Nothing on these
+ * pages is hardcoded except the error fallback at the bottom.
  *
  * Caching is what makes that affordable. The API lives on Render's free tier,
  * so responses are cached at Vercel's edge with a short s-maxage and a long
@@ -28,8 +30,12 @@ const API_BASE = (
 // page whose entire purpose is ranking.
 const SITE_URL = (process.env.SITE_URL || 'https://www.criminalcrisis.com').replace(/\/+$/, '');
 
-const SLUG = 'frankydrama';
-const CANONICAL = SITE_URL + '/' + SLUG;
+/**
+ * Which page to render arrives as ?slug=, set by the rewrite in vercel.json —
+ * never by the visitor typing one. It still gets validated, because the value
+ * ends up inside the canonical and og:url of the response.
+ */
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$/;
 
 /** Vercel's Hobby functions cap out around 10s, so fail before the platform does. */
 const API_TIMEOUT_MS = 9000;
@@ -46,6 +52,19 @@ function esc(value) {
 /** Only http(s) and mailto reach an href. The API validates too; this is the last gate. */
 function safeUrl(url) {
   return /^(https?:\/\/|mailto:)/i.test(String(url || '')) ? String(url) : null;
+}
+
+/** Our own host, apex and www treated as one site. */
+const SITE_HOST = SITE_URL.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+
+/** True for an http(s) URL that points somewhere other than this site. */
+function isExternalProfile(url) {
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') !== SITE_HOST;
+  } catch {
+    return false;
+  }
 }
 
 const STYLES = `
@@ -175,8 +194,9 @@ function linkAttrs(url) {
   return url.toLowerCase().startsWith('mailto:') ? '' : ' target="_blank" rel="noopener noreferrer"';
 }
 
-function renderPage(page) {
-  const name = page.display_name || 'frankydrama';
+function renderPage(page, canonical) {
+  const CANONICAL = canonical;
+  const name = page.display_name || page.slug || '';
   const title = page.seo_title || name;
   const description = page.seo_description || '';
   const image = page.og_image_url || '';
@@ -195,19 +215,31 @@ function renderPage(page) {
   // sameAs is derived rather than a field of its own: every profile the page
   // already links to is a profile Google should associate with the entity, and
   // one less list to maintain is one less way for it to go stale.
+  //
+  // Links back into this site are excluded. sameAs means "the same entity,
+  // elsewhere" — our own pages are not elsewhere, and the label's page links to
+  // several of them, which would otherwise fill its sameAs with internal URLs
+  // and tell a search engine nothing.
   const sameAs = [...new Set(
-    [...buttons, ...footer]
-      .map(b => b.url)
-      .filter(url => /^https?:\/\//i.test(url) && url.replace(/\/+$/, '') !== CANONICAL)
+    [...buttons, ...footer].map(b => b.url).filter(isExternalProfile)
   )];
+
+  // An artist page describes an artist; the label's page describes the label.
+  const schemaType = page.schema_type === 'Organization' ? 'Organization' : 'MusicGroup';
+
+  // For the label, the entity's canonical URL is the home page — which already
+  // carries its own Organization block. Pointing both at the same url makes the
+  // two describe one entity that search engines can consolidate, instead of two
+  // rival organisations that happen to share a name.
+  const entityUrl = schemaType === 'Organization' ? SITE_URL : CANONICAL;
 
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@type': 'MusicGroup',
+    '@type': schemaType,
     name,
     ...(page.alternate_name ? { alternateName: page.alternate_name } : {}),
     ...(description ? { description } : {}),
-    url: CANONICAL,
+    url: entityUrl,
     ...(image ? { image } : {}),
     ...(page.city ? { foundingLocation: { '@type': 'Place', name: page.city } } : {}),
     ...(sameAs.length ? { sameAs } : {}),
@@ -287,14 +319,14 @@ function renderUnavailable() {
     '<head>',
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    '<title>frankydrama</title>',
+    '<title>Criminal Crisis</title>',
     '<meta name="robots" content="noindex">',
     '<style>' + STYLES + '</style>',
     '</head>',
     '<body>',
     '  <main class="wrap">',
     '    <header class="identity">',
-    '      <h1>frankydrama</h1>',
+    '      <h1>Criminal Crisis</h1>',
     '      <p class="tagline">This page is temporarily unavailable. Please try again in a moment.</p>',
     '    </header>',
     '    <nav class="links">',
@@ -306,12 +338,21 @@ function renderUnavailable() {
   ].join('\n');
 }
 
-export default async function handler(_req, res) {
+export default async function handler(req, res) {
+  const slug = String(req.query?.slug ?? '');
+  if (!SLUG_PATTERN.test(slug)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).send(renderUnavailable());
+    return;
+  }
+
+  const canonical = SITE_URL + '/' + slug;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const response = await fetch(API_BASE + '/api/link-page/' + SLUG, {
+    const response = await fetch(API_BASE + '/api/link-page/' + slug, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
@@ -320,9 +361,9 @@ export default async function handler(_req, res) {
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60, stale-while-revalidate=86400');
-    res.status(200).send(renderPage(page));
+    res.status(200).send(renderPage(page, canonical));
   } catch (err) {
-    console.error('[frankydrama] could not render from the API:', err.message);
+    console.error('[link-page] could not render ' + slug + ' from the API:', err.message);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.status(503).send(renderUnavailable());

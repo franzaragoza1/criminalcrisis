@@ -4,7 +4,6 @@ import { api } from '../../api';
 import type { LinkItem, LinkPage } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 
-const SLUG = 'frankydrama';
 
 /**
  * Seven is the cap the public page enforces too. The point of /frankydrama is
@@ -147,7 +146,7 @@ function Fieldset({ title, hint, children }: { title: string; hint?: string; chi
   );
 }
 
-export default function LinkPageAdmin() {
+export default function LinkPageAdmin({ slug, title }: { slug: string; title: string }) {
   const [page, setPage] = useState<LinkPage | null>(null);
   const [ogImage, setOgImage] = useState<File | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -156,16 +155,18 @@ export default function LinkPageAdmin() {
 
   useEffect(() => {
     api
-      .getLinkPage(SLUG)
+      .getLinkPage(slug)
       .then(p => {
         setPage(p);
+        setOgImage(null);
+        setPhoto(null);
         setStatus('idle');
       })
       .catch(e => {
         setError(e instanceof Error ? e.message : 'No se pudo cargar la página');
         setStatus('error');
       });
-  }, []);
+  }, [slug]);
 
   const set = <K extends keyof LinkPage>(field: K, value: LinkPage[K]) =>
     setPage(prev => (prev ? { ...prev, [field]: value } : prev));
@@ -189,7 +190,7 @@ export default function LinkPageAdmin() {
     if (photo) fd.append('photo', photo);
 
     try {
-      const saved = await api.updateLinkPage(SLUG, fd);
+      const saved = await api.updateLinkPage(slug, fd);
       setPage(saved);
       setOgImage(null);
       setPhoto(null);
@@ -207,9 +208,9 @@ export default function LinkPageAdmin() {
   return (
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xl font-bold text-[#111]">frankydrama</h2>
+        <h2 className="text-xl font-bold text-[#111]">{title}</h2>
         <a
-          href={`/${SLUG}`}
+          href={`/${slug}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 text-xs text-[#888] hover:text-[#111] transition-colors"
@@ -218,7 +219,7 @@ export default function LinkPageAdmin() {
         </a>
       </div>
       <p className="text-xs text-[#888] mb-8 max-w-prose leading-relaxed">
-        Todo lo de esta pantalla sale en criminalcrisis.com/frankydrama. Los cambios tardan
+        Todo lo de esta pantalla sale en criminalcrisis.com/{slug}. Los cambios tardan
         hasta un minuto en verse online; recarga la página pública pasado ese rato.
       </p>
 

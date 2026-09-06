@@ -95,6 +95,10 @@ export async function initDb() {
       tagline TEXT,
       city TEXT,
       alternate_name TEXT,
+      -- schema.org type for the JSON-LD: 'MusicGroup' for an artist page,
+      -- 'Organization' for the label's own. Not derivable from anything else on
+      -- the row, so it has to be stored.
+      schema_type TEXT DEFAULT 'MusicGroup',
       -- The portrait shown on the page itself, as opposed to og_image_url,
       -- which is the card other apps render when the link is shared.
       photo_url TEXT,
@@ -236,6 +240,7 @@ export async function initDb() {
 
   // Safe migrations — add new columns if they don't exist yet
   await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+  await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS schema_type TEXT DEFAULT 'MusicGroup'`);
   await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);
   await pool.query(`ALTER TABLE promo_tracks ADD COLUMN IF NOT EXISTS mp3_public_id TEXT`);
@@ -360,23 +365,20 @@ async function seedIfEmpty() {
  * than an upsert.
  */
 async function seedLinkPages() {
-  await pool.query(
-    `INSERT INTO link_pages
-       (slug, display_name, tagline, city, alternate_name, photo_url,
-        seo_title, seo_description, og_image_url, buttons, footer_links)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (slug) DO NOTHING`,
-    [
-      'frankydrama',
-      'frankydrama',
-      'mostly making music, sometimes playing tunes',
-      'Madrid',
-      'Fran Zaragoza',
-      '/img/frankydrama.jpg',
-      'frankydrama | Electronic Music Artist, Audio Engineer',
-      'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
-      'https://f4.bcbits.com/img/0037962526_23.jpg',
-      JSON.stringify([
+  const pages = [
+    {
+      slug: 'frankydrama',
+      display_name: 'frankydrama',
+      tagline: 'mostly making music, sometimes playing tunes',
+      city: 'Madrid',
+      alternate_name: 'Fran Zaragoza',
+      schema_type: 'MusicGroup',
+      photo_url: '/img/frankydrama.jpg',
+      seo_title: 'frankydrama | Electronic Music Artist, Audio Engineer',
+      seo_description:
+        'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
+      og_image_url: 'https://f4.bcbits.com/img/0037962526_23.jpg',
+      buttons: [
         { label: 'Club Tools Vol. 1', url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', note: 'Latest release' },
         { label: 'SoundCloud', url: 'https://soundcloud.com/frankydrama' },
         { label: 'Bandcamp', url: 'https://frankydrama.bandcamp.com/' },
@@ -384,12 +386,58 @@ async function seedLinkPages() {
         { label: 'Beatport', url: 'https://www.beatport.com/artist/frankydrama/1148532' },
         { label: 'Spotify', url: 'https://open.spotify.com/artist/3KOEZox4Auk4LwRbhaySBz' },
         { label: 'Instagram', url: 'https://www.instagram.com/itsfrankydrama/' },
-      ]),
-      JSON.stringify([
+      ],
+      footer_links: [
         { label: 'Criminal Crisis', url: 'https://criminalcrisis.com' },
         { label: 'Vinyl — Strictly Human / Pseudo Stories', url: 'https://elasticstage.com/frankydrama/releases/strictly-human-pseudo-stories-album' },
         { label: 'fran@criminalcrisis.com', url: 'mailto:fran@criminalcrisis.com' },
-      ]),
-    ]
-  );
+      ],
+    },
+    // The label's own link-in-bio page. Every value below is taken from
+    // something already in this repo — the title and meta description in
+    // index.html, the hero tagline, and the label's profile links in
+    // components/layout/Footer.tsx — so nothing here is a guess. It is all
+    // editable at /admin, which is the point.
+    {
+      slug: 'links',
+      display_name: 'Criminal Crisis',
+      tagline: 'Banging Boogie Bangers',
+      city: 'Madrid',
+      alternate_name: null,
+      schema_type: 'Organization',
+      photo_url: null,
+      seo_title: 'Criminal Crisis — Links',
+      seo_description:
+        'Criminal Crisis — Underground Electronic Music Label. Madrid. UK Bass, Techno, House, Breaks.',
+      og_image_url: 'https://www.criminalcrisis.com/img/logos/logotipo5_criminalCrisis@2x.png',
+      buttons: [
+        { label: 'Bandcamp', url: 'https://criminalcrisis.bandcamp.com', note: 'Discography' },
+        { label: 'SoundCloud', url: 'https://soundcloud.com/criminal_crisis' },
+        { label: 'Beatport', url: 'https://www.beatport.com/es/label/criminal-crisis/115183' },
+        { label: 'Instagram', url: 'https://www.instagram.com/criminalcrisis/' },
+        { label: 'Shop', url: 'https://www.criminalcrisis.com/#shop' },
+        { label: 'Promo Pool', url: 'https://www.criminalcrisis.com/promo' },
+        { label: 'frankydrama', url: 'https://www.criminalcrisis.com/frankydrama' },
+      ],
+      footer_links: [
+        { label: 'criminalcrisis.com', url: 'https://www.criminalcrisis.com' },
+        { label: 'info@criminalcrisis.com', url: 'mailto:info@criminalcrisis.com' },
+      ],
+    },
+  ];
+
+  for (const p of pages) {
+    await pool.query(
+      `INSERT INTO link_pages
+         (slug, display_name, tagline, city, alternate_name, schema_type, photo_url,
+          seo_title, seo_description, og_image_url, buttons, footer_links)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (slug) DO NOTHING`,
+      [
+        p.slug, p.display_name, p.tagline, p.city, p.alternate_name, p.schema_type,
+        p.photo_url, p.seo_title, p.seo_description, p.og_image_url,
+        JSON.stringify(p.buttons), JSON.stringify(p.footer_links),
+      ]
+    );
+  }
 }
