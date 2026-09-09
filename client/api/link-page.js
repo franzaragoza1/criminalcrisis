@@ -167,6 +167,65 @@ a { color: inherit; text-decoration: none; }
   opacity: 0.6;
 }
 
+/* Featured — Linktree's own finding is that a link with a picture on it gets
+   roughly twice the clicks of a bare text button. Same border language as .btn
+   so the two read as one family rather than two designs. */
+.card {
+  display: block;
+  border: 1px solid #111111;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.card:hover, .card:focus-visible { background: #111111; color: #FAFAFA; }
+.card__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #F0F0F0;
+  border-bottom: 1px solid #111111;
+}
+.card__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.9rem 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* Inline players. Heights are reserved per provider so nothing below shifts
+   when the iframe finally loads. */
+.embed { border: 1px solid #111111; }
+.embed__title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.9rem 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  border-bottom: 1px solid #111111;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.embed__title:hover, .embed__title:focus-visible { background: #111111; color: #FAFAFA; }
+.embed iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+.embed--bandcamp iframe { height: 470px; }
+.embed--soundcloud iframe { height: 166px; }
+.embed--spotify iframe { height: 352px; }
+.embed--spotify-track iframe { height: 152px; }
+.embed--youtube iframe { aspect-ratio: 16 / 9; height: auto; }
+
 .foot {
   margin-top: 3rem;
   padding-top: 1.5rem;
@@ -192,6 +251,83 @@ a { color: inherit; text-decoration: none; }
 /** mailto opens in the mail client; every external profile opens in a new tab. */
 function linkAttrs(url) {
   return url.toLowerCase().startsWith('mailto:') ? '' : ' target="_blank" rel="noopener noreferrer"';
+}
+
+/**
+ * Players are only ever built from a src the API already normalised and
+ * allowlisted. This is the second gate: a host that is not one of these never
+ * reaches an iframe, whatever ends up in the database.
+ *
+ * The height each provider needs is fixed and known, so it is reserved in CSS.
+ * An iframe that sizes itself after loading would shove every link below it
+ * down the page while someone is reaching for one.
+ */
+const EMBED_PROVIDERS = {
+  'bandcamp.com': 'embed--bandcamp',
+  'w.soundcloud.com': 'embed--soundcloud',
+  'open.spotify.com': 'embed--spotify',
+  'www.youtube-nocookie.com': 'embed--youtube',
+};
+
+function embedClass(src) {
+  try {
+    const host = new URL(src).hostname;
+    const cls = EMBED_PROVIDERS[host];
+    if (!cls) return null;
+    // Spotify's single-track player is less than half the height of the others.
+    if (cls === 'embed--spotify' && /\/embed\/track\//.test(src)) return 'embed--spotify-track';
+    return cls;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One link, in whichever of the three shapes it was given.
+ *
+ * 'featured' without an image falls back to the solid treatment rather than
+ * rendering an empty picture frame, which also means the pages keep the look
+ * they had when the lead button was decided by position alone.
+ */
+function renderLink(b) {
+  const cls = b.embed ? embedClass(b.embed) : null;
+
+  if (b.layout === 'embed' && cls) {
+    return [
+      '      <div class="embed ' + cls + '">',
+      // The anchor stays. A player is not a link as far as a crawler is
+      // concerned, and turning a button into one must not quietly delete the
+      // outbound link — it is also the fallback when the iframe is blocked.
+      '        <a class="embed__title" href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>',
+      b.note ? '          <span class="btn__note">' + esc(b.note) + '</span>' : null,
+      '          <span class="btn__label">' + esc(b.label) + '</span>',
+      '        </a>',
+      '        <iframe src="' + esc(b.embed) + '" title="' + esc(b.label) + '" loading="lazy"' +
+        ' allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"' +
+        ' referrerpolicy="strict-origin-when-cross-origin"></iframe>',
+      '      </div>',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (b.layout === 'featured' && b.image) {
+    return [
+      '      <a class="card" href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>',
+      '        <img class="card__img" src="' + esc(b.image) + '" alt="" loading="lazy" decoding="async">',
+      '        <span class="card__body">',
+      b.note ? '          <span class="btn__note">' + esc(b.note) + '</span>' : null,
+      '          <span class="btn__label">' + esc(b.label) + '</span>',
+      '        </span>',
+      '      </a>',
+    ].filter(Boolean).join('\n');
+  }
+
+  const lead = b.layout === 'featured' ? ' btn--lead' : '';
+  return [
+    '      <a class="btn' + lead + '" href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>',
+    b.note ? '        <span class="btn__note">' + esc(b.note) + '</span>' : null,
+    '        <span class="btn__label">' + esc(b.label) + '</span>',
+    '      </a>',
+  ].filter(Boolean).join('\n');
 }
 
 function renderPage(page, canonical) {
@@ -245,12 +381,7 @@ function renderPage(page, canonical) {
     ...(sameAs.length ? { sameAs } : {}),
   };
 
-  const buttonsHtml = buttons.map((b, i) => [
-    '      <a class="btn' + (i === 0 ? ' btn--lead' : '') + '" href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>',
-    b.note ? '        <span class="btn__note">' + esc(b.note) + '</span>' : null,
-    '        <span class="btn__label">' + esc(b.label) + '</span>',
-    '      </a>',
-  ].filter(Boolean).join('\n')).join('\n');
+  const buttonsHtml = buttons.map(renderLink).join('\n');
 
   const footerHtml = footer
     .map(b => '      <a href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>' + esc(b.label) + '</a>')

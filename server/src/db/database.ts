@@ -379,7 +379,7 @@ async function seedLinkPages() {
         'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
       og_image_url: 'https://f4.bcbits.com/img/0037962526_23.jpg',
       buttons: [
-        { label: 'Club Tools Vol. 1', url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', note: 'Latest release' },
+        { label: 'Club Tools Vol. 1', url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', note: 'Latest release', layout: 'featured' },
         { label: 'SoundCloud', url: 'https://soundcloud.com/frankydrama' },
         { label: 'Bandcamp', url: 'https://frankydrama.bandcamp.com/' },
         { label: 'Resident Advisor', url: 'https://es.ra.co/dj/frankydrama' },
@@ -411,7 +411,7 @@ async function seedLinkPages() {
         'Criminal Crisis — Underground Electronic Music Label. Madrid. UK Bass, Techno, House, Breaks.',
       og_image_url: 'https://www.criminalcrisis.com/img/logos/logotipo5_criminalCrisis@2x.png',
       buttons: [
-        { label: 'Bandcamp', url: 'https://criminalcrisis.bandcamp.com', note: 'Discography' },
+        { label: 'Bandcamp', url: 'https://criminalcrisis.bandcamp.com', note: 'Discography', layout: 'featured' },
         { label: 'SoundCloud', url: 'https://soundcloud.com/criminal_crisis' },
         { label: 'Beatport', url: 'https://www.beatport.com/es/label/criminal-crisis/115183' },
         { label: 'Instagram', url: 'https://www.instagram.com/criminalcrisis/' },
