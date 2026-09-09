@@ -221,6 +221,8 @@ a { color: inherit; text-decoration: none; }
   border: 0;
 }
 .embed--bandcamp iframe { height: 470px; }
+.embed--bandcamp-compact iframe { height: 130px; }
+.embed--bandcamp-slim iframe { height: 42px; }
 .embed--soundcloud iframe { height: 166px; }
 .embed--spotify iframe { height: 352px; }
 .embed--spotify-track iframe { height: 152px; }
@@ -269,11 +271,26 @@ const EMBED_PROVIDERS = {
   'www.youtube-nocookie.com': 'embed--youtube',
 };
 
+/**
+ * Bandcamp has no single height: the same player is a 42px strip, a 130px bar
+ * or a 470px panel depending on flags in its own URL. Reserving one figure for
+ * all three left a 340px hole under the album player, so the height is read
+ * back out of the parameters that caused it.
+ */
+function bandcampClass(src) {
+  if (/\/size=small\//.test(src)) return 'embed--bandcamp-slim';
+  const tracklistHidden = /\/tracklist=false\//.test(src) || /\/notracklist=true\//.test(src);
+  if (/\/artwork=small\//.test(src) && tracklistHidden) return 'embed--bandcamp-compact';
+  // Big artwork, or a tracklist of unknown length: keep the tall reservation.
+  return 'embed--bandcamp';
+}
+
 function embedClass(src) {
   try {
     const host = new URL(src).hostname;
     const cls = EMBED_PROVIDERS[host];
     if (!cls) return null;
+    if (cls === 'embed--bandcamp') return bandcampClass(src);
     // Spotify's single-track player is less than half the height of the others.
     if (cls === 'embed--spotify' && /\/embed\/track\//.test(src)) return 'embed--spotify-track';
     return cls;
