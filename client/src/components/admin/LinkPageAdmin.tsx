@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, ExternalLink, Plus, X } from 'lucide-react';
 import { api } from '../../api';
-import type { LinkItem, LinkPage } from '../../types';
+import type { LinkItem, LinkLayout, LinkPage } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 
 
 /**
- * Seven is the cap the public page enforces too. The point of /frankydrama is
- * that someone arriving from Instagram knows who this is and where to listen in
- * about three seconds; a longer list is a worse page, not a fuller one.
+ * Not a product limit — the same guard the API enforces, so one runaway paste
+ * cannot bloat the row. How many links belong on the page is the editor's call.
  */
-const MAX_BUTTONS = 7;
-const MAX_FOOTER_LINKS = 6;
+const MAX_BUTTONS = 50;
+const MAX_FOOTER_LINKS = 20;
+
+/** The three shapes a link can take, in the order they cost the reader attention. */
+const LAYOUTS: { value: LinkLayout; label: string; hint: string }[] = [
+  { value: 'classic', label: 'Normal', hint: 'Botón de texto, compacto.' },
+  { value: 'featured', label: 'Destacado', hint: 'Más grande. Con imagen sale una tarjeta; sin imagen, en negro.' },
+  { value: 'embed', label: 'Reproductor', hint: 'Suena dentro de la página. Bandcamp, SoundCloud, Spotify o YouTube.' },
+];
 
 /** Google truncates around these lengths. Not limits — just where the counter turns amber. */
 const TITLE_BUDGET = 60;
@@ -85,6 +91,51 @@ function LinkListEditor({
                   onChange={e => update(i, 'note', e.target.value)}
                   placeholder="Etiqueta pequeña encima, opcional — p. ej. Latest release"
                   className={INPUT_CLS}
+                />
+              )}
+
+              {withNote && (
+                <div className="pt-1">
+                  <div className="flex flex-wrap gap-1">
+                    {LAYOUTS.map(l => {
+                      const active = (item.layout ?? 'classic') === l.value;
+                      return (
+                        <button
+                          key={l.value}
+                          type="button"
+                          onClick={() => update(i, 'layout', l.value)}
+                          className={`px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#111] text-white border-[#111]'
+                              : 'border-[#E0E0E0] text-[#888] hover:border-[#111] hover:text-[#111]'
+                          }`}
+                        >
+                          {l.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-[#999] mt-1">
+                    {LAYOUTS.find(l => l.value === (item.layout ?? 'classic'))?.hint}
+                  </p>
+                </div>
+              )}
+
+              {withNote && item.layout === 'featured' && (
+                <input
+                  value={item.image ?? ''}
+                  onChange={e => update(i, 'image', e.target.value)}
+                  placeholder="URL de la imagen (16:9) — p. ej. la portada del disco"
+                  className={`${INPUT_CLS} font-mono text-xs`}
+                />
+              )}
+
+              {withNote && item.layout === 'embed' && (
+                <input
+                  value={item.embed ?? ''}
+                  onChange={e => update(i, 'embed', e.target.value)}
+                  placeholder="Vacío = usa el enlace de arriba. Bandcamp: pega su código embed."
+                  className={`${INPUT_CLS} font-mono text-xs`}
                 />
               )}
             </div>
@@ -275,8 +326,8 @@ export default function LinkPageAdmin({ slug, title }: { slug: string; title: st
         </Fieldset>
 
         <Fieldset
-          title={`Botones (${page.buttons.length}/${MAX_BUTTONS})`}
-          hint="En el orden en que aparecen. El primero sale destacado en negro — déjale ahí el lanzamiento nuevo."
+          title={`Botones (${page.buttons.length})`}
+          hint="En el orden en que aparecen. Cada uno puede ser normal, destacado o un reproductor que suena aquí mismo."
         >
           <LinkListEditor
             items={page.buttons}

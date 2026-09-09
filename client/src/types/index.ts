@@ -45,11 +45,19 @@ export interface HeroContent {
 
 // --- Link pages ------------------------------------------------------------
 
+export type LinkLayout = 'classic' | 'featured' | 'embed';
+
 /** One row of an editable link list. `note` is an optional eyebrow above the label. */
 export interface LinkItem {
   label: string;
   url: string;
   note?: string;
+  /** classic = compact button, featured = card with image, embed = inline player. */
+  layout?: LinkLayout;
+  /** Preview image for a featured link. 16:9 works best. */
+  image?: string;
+  /** Player URL, normalised server-side from whatever the editor pasted. */
+  embed?: string;
 }
 
 /** The /frankydrama page, edited whole in one form. Array order is display order. */
