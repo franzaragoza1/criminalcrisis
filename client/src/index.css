@@ -84,6 +84,18 @@ body::after {
   background-size: 256px 256px;
 }
 
+/* ── Scroll strips ─────────────────────────────────────────────── */
+
+/* Keeps a horizontal strip scrollable without the bar cutting into the
+   card it sits under. The strip still scrolls by wheel, swipe and arrows. */
+.cc-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cc-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Now-playing pulse ─────────────────────────────────────────── */
 
 @keyframes pulse-red {
