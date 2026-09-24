@@ -57,20 +57,35 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/promo', promoRoutes);
 
 /**
- * Keep-alive target as well as a health check, which is why it touches the
- * database.
+ * Keep-alive target as well as a health check. It deliberately does NOT touch
+ * the database.
  *
  * Two things hibernate independently here: Render's web service sleeps after
- * ~15 minutes idle, and Neon suspends its compute after ~5. A ping that only
- * proves Express is listening wakes the first and never the second, so the
- * first real page load still pays for waking the database.
+ * ~15 minutes idle, and Neon suspends its compute after ~5. Making the ping
+ * wake both looks like a free win and is the opposite: a ping frequent enough
+ * to keep Render awake is frequent enough that Neon's compute never suspends,
+ * which is ~720 compute-hours a month against a free allowance of a couple of
+ * hundred. That is how this project exhausted its quota in three weeks with
+ * almost no visitors, and every DB-backed endpoint answered 500 until the
+ * billing cycle rolled over.
  *
- * It answers 200 even when the query fails, on purpose. An uptime pinger that
- * sees repeated non-2xx responses disables the job, and a disabled pinger is
- * how the server ends up asleep for good — exactly the failure this endpoint
- * exists to prevent. The `db` field carries the bad news instead.
+ * So the ping wakes Express only. Letting the database suspend costs the first
+ * visitor after an idle spell about a second while Neon resumes — measured at
+ * 2.35s falling to 0.64s as the connection warms. Keeping it awake costs the
+ * whole site, for days.
+ *
+ * `?db=1` runs the connectivity check on demand, for when you actually want to
+ * know. Keep it off the pinger's URL. It answers 200 even when the query
+ * fails, on purpose: an uptime pinger that sees repeated non-2xx disables the
+ * job, and a disabled pinger is how the service ends up asleep for good. The
+ * `db` field carries the bad news instead.
  */
-app.get('/api/health', async (_, res) => {
+app.get('/api/health', async (req, res) => {
+  if (req.query.db === undefined) {
+    res.json({ ok: true, db: 'unchecked' });
+    return;
+  }
+
   const started = Date.now();
   try {
     await pool.query('SELECT 1');
