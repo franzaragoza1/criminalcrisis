@@ -47,14 +47,27 @@ app.use(express.json());
 app.post('/api/payment/create-payment-intent', createPaymentIntent);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-app.use('/api/auth', authRoutes);
-app.use('/api/artists', artistRoutes);
-app.use('/api/releases', releaseRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/hero', heroRoutes);
-app.use('/api/link-page', linkPageRoutes);
+/**
+ * Refuses DB-backed traffic until the schema check has actually passed, rather
+ * than letting every route fail one query at a time with whatever message the
+ * provider happens to return. 503 is the honest answer: the service exists, it
+ * cannot serve this yet, and the client should come back.
+ */
+let dbReady = false;
+
+const requireDb: express.RequestHandler = (_req, res, next) => {
+  if (dbReady) { next(); return; }
+  res.status(503).json({ error: 'Database unavailable, retrying' });
+};
+
+app.use('/api/auth', requireDb, authRoutes);
+app.use('/api/artists', requireDb, artistRoutes);
+app.use('/api/releases', requireDb, releaseRoutes);
+app.use('/api/events', requireDb, eventRoutes);
+app.use('/api/hero', requireDb, heroRoutes);
+app.use('/api/link-page', requireDb, linkPageRoutes);
 app.use('/api/contact', contactRoutes);
-app.use('/api/promo', promoRoutes);
+app.use('/api/promo', requireDb, promoRoutes);
 
 /**
  * Keep-alive target as well as a health check. It deliberately does NOT touch
@@ -82,7 +95,8 @@ app.use('/api/promo', promoRoutes);
  */
 app.get('/api/health', async (req, res) => {
   if (req.query.db === undefined) {
-    res.json({ ok: true, db: 'unchecked' });
+    // Reports what the process already knows, which costs no query at all.
+    res.json({ ok: true, db: dbReady ? 'ready' : 'initialising' });
     return;
   }
 
@@ -96,14 +110,41 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-(async () => {
-  try {
-    await initDb();
-    app.listen(PORT, () => {
-      console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
-    });
-  } catch (err) {
-    console.error('Fatal: could not initialize database, server not started.', err);
-    process.exit(1);
+/**
+ * The server listens first and initialises the database afterwards, retrying in
+ * the background until it succeeds.
+ *
+ * It used to be the other way round: `initDb()` first, `process.exit(1)` if it
+ * threw. That turns any database outage into an undeployable service, which is
+ * how the quota incident of 2026-09-23 nearly trapped us — the fix that stops
+ * the database being hammered could not ship, because shipping required the
+ * database to be up. It also took down routes that need no database at all,
+ * including the health check a pinger uses to decide the service is alive.
+ *
+ * Booting anyway costs nothing: `requireDb` answers 503 on the data routes
+ * until the schema check passes, so the failure is visible and honest instead
+ * of silent.
+ */
+async function initDbWithRetry() {
+  // Caps at ~2 minutes. Long enough not to hammer a database that is down,
+  // short enough that a service which boots mid-outage recovers on its own.
+  let delayMs = 2_000;
+  for (;;) {
+    try {
+      await initDb();
+      dbReady = true;
+      console.log('Database ready.');
+      return;
+    } catch (err: any) {
+      console.error(`[db] init failed (${err.message}); retrying in ${delayMs / 1000}s`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      delayMs = Math.min(delayMs * 2, 120_000);
+    }
   }
-})();
+}
+
+app.listen(PORT, () => {
+  console.log(`Criminal Crisis API running on http://localhost:${PORT}`);
+});
+
+initDbWithRetry();
