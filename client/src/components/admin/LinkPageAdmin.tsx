@@ -40,6 +40,88 @@ function CharCount({ value, budget }: { value: string; budget: number }) {
   );
 }
 
+/** The API answers errors as JSON; show the sentence inside, not the braces. */
+function readError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  try {
+    return JSON.parse(raw).error || raw;
+  } catch {
+    return raw || 'No se pudo subir la imagen';
+  }
+}
+
+/**
+ * Picks an image from the computer and uploads it straight away, so the editor
+ * sees the actual picture before saving rather than a URL they have to trust.
+ */
+function ImagePicker({ value, onChange }: { value?: string; onChange: (url: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [justUploaded, setJustUploaded] = useState(false);
+
+  const pick = async (file?: File) => {
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    setJustUploaded(false);
+    try {
+      const { url } = await api.uploadLinkImage(file);
+      onChange(url);
+      setJustUploaded(true);
+    } catch (e) {
+      setError(readError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-start gap-3 pt-1">
+      {value ? (
+        <img src={value} alt="" className="w-32 aspect-video object-cover border border-[#E8E8E8] flex-shrink-0" />
+      ) : (
+        <div className="w-32 aspect-video border border-dashed border-[#D0D0D0] flex items-center justify-center text-[10px] text-[#B0B0B0] flex-shrink-0">
+          Sin imagen
+        </div>
+      )}
+      <div className="flex flex-col items-start gap-1.5">
+        <label
+          className={`border border-[#111] px-3 py-1.5 text-xs font-medium transition-colors ${
+            busy ? 'opacity-40 cursor-wait' : 'cursor-pointer hover:bg-[#111] hover:text-white'
+          }`}
+        >
+          {busy ? 'Subiendo…' : value ? 'Cambiar imagen' : 'Subir imagen'}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={busy}
+            onChange={e => {
+              pick(e.target.files?.[0]);
+              // Lets the same file be picked again after an error.
+              e.target.value = '';
+            }}
+          />
+        </label>
+        {value && !busy && (
+          <button
+            type="button"
+            onClick={() => { onChange(''); setJustUploaded(false); }}
+            className="text-xs text-[#888] hover:text-red-500 transition-colors cursor-pointer"
+          >
+            Quitar imagen
+          </button>
+        )}
+        {justUploaded && !error && (
+          <p className="text-xs text-green-600">Subida. Pulsa Guardar abajo para publicarla.</p>
+        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <p className="text-[11px] text-[#AAA]">Desde tu ordenador o móvil. Mejor apaisada (16:9).</p>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Ordered list of label + URL rows. Order is the only thing that decides where a
  * link shows up, so reordering is two arrows and no other concept to learn.
@@ -122,12 +204,7 @@ function LinkListEditor({
               )}
 
               {withNote && item.layout === 'featured' && (
-                <input
-                  value={item.image ?? ''}
-                  onChange={e => update(i, 'image', e.target.value)}
-                  placeholder="URL de la imagen (16:9) — p. ej. la portada del disco"
-                  className={`${INPUT_CLS} font-mono text-xs`}
-                />
+                <ImagePicker value={item.image} onChange={url => update(i, 'image', url)} />
               )}
 
               {withNote && item.layout === 'embed' && (
