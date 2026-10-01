@@ -175,7 +175,55 @@ function serialize(row: Record<string, any>) {
   };
 }
 
-// Public. Read by the /frankydrama renderer on every cache revalidation.
+/**
+ * Images for featured links come from the editor's computer, not from a pasted
+ * URL. Pasting failed in exactly the way you would expect from someone who is
+ * not technical: an imgur *album page* went in where an image belonged, and the
+ * page showed a broken picture. Uploading to the same Cloudinary account the
+ * rest of the admin already uses removes the step where that can go wrong.
+ */
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, file.mimetype.startsWith('image/')),
+});
+
+router.post(
+  '/upload-image',
+  authMiddleware,
+  // Multer reports an oversized file by throwing into Express's default error
+  // handler, which answers with an HTML stack page the admin cannot show. Catch
+  // it here so the editor gets a sentence instead.
+  (req, res, next) => {
+    imageUpload.single('image')(req, res, err => {
+      if (err) {
+        res.status(400).json({
+          error: err.code === 'LIMIT_FILE_SIZE' ? 'La imagen pesa más de 10 MB.' : err.message,
+        });
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'Eso no es una imagen.' });
+      return;
+    }
+    const original = await uploadToCloudinary(req.file.buffer, 'link-pages');
+    // Phone photos arrive at 4000px and several MB. Cloudinary resizes and
+    // picks the format per browser at delivery time when asked in the URL, so
+    // the card loads a ~100 KB image instead of the original.
+    const url = original.replace('/upload/', '/upload/f_auto,q_auto,c_limit,w_1200/');
+    res.json({ url });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'No se pudo subir la imagen' });
+  }
+  }
+);
+
+// Public. Read by the link-page renderer on every cache revalidation.
 router.get('/:slug', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM link_pages WHERE slug = $1', [req.params.slug]);

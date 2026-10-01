@@ -68,6 +68,12 @@ export const api = {
   getLinkPage: (slug: string) => request<LinkPage>(`/link-page/${slug}`),
   updateLinkPage: (slug: string, data: FormData) =>
     request<LinkPage>(`/link-page/${slug}`, { method: 'PUT', headers: authHeaders(), body: data }),
+  /** Uploads one image to Cloudinary and returns its delivery URL. */
+  uploadLinkImage: (file: File) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    return request<{ url: string }>('/link-page/upload-image', { method: 'POST', headers: authHeaders(), body: fd });
+  },
 
   // --- Promo pool: public (token-gated, no login) ---
   getPromo: (slug: string, k: string) =>
