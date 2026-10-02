@@ -234,6 +234,27 @@ export async function initDb() {
       ON promo_feedback (recipient_id) WHERE track_id IS NULL
   `);
 
+  // ---------------------------------------------------------------------------
+  // Merch pre-saves
+  // ---------------------------------------------------------------------------
+
+  // A reservation, not an order: nothing is charged. When stock arrives the label
+  // writes to each person to collect payment and an address. One row per size,
+  // so the size totals double as the stock order.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS merch_reservations (
+      id SERIAL PRIMARY KEY,
+      product TEXT NOT NULL,
+      size TEXT NOT NULL,
+      name TEXT,
+      email TEXT NOT NULL,
+      status TEXT DEFAULT 'reserved',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (product, email, size)
+    )
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS promo_events_recipient_idx ON promo_events (recipient_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS promo_recipients_queue_idx ON promo_recipients (send_status, campaign_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS promo_contacts_status_idx ON promo_contacts (status)`);

@@ -1,4 +1,4 @@
-import type { LinkPage } from '../types';
+import type { LinkPage, MerchReservation } from '../types';
 
 const BASE = `${import.meta.env.VITE_API_URL || ''}/api`;
 
@@ -212,4 +212,23 @@ export const api = {
     }),
   getPromoPreviewUrl: (campaignId: number) =>
     request<{ url: string }>(`/promo/campaigns/${campaignId}/preview`, { headers: authHeaders() }),
+
+  // --- Merch pre-saves ---
+  reserveMerch: (body: { product: string; size: string; name: string; email: string }) =>
+    request('/merch/reserve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  getMerchReservations: () =>
+    request<{ reservations: MerchReservation[]; sizes: Record<string, string[]> }>('/merch/reservations', { headers: authHeaders() }),
+  updateMerchReservation: (id: number, status: MerchReservation['status']) =>
+    request(`/merch/reservations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ status }),
+    }),
+  deleteMerchReservation: (id: number) =>
+    request(`/merch/reservations/${id}`, { method: 'DELETE', headers: authHeaders() }),
+  exportMerchReservationsUrl: () => `${BASE}/merch/reservations/export.csv`,
 };

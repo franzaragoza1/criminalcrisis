@@ -1,42 +1,57 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingCart } from 'lucide-react';
-import { Checkout } from '../shop/Checkout';
+import { Bookmark, Check } from 'lucide-react';
+import { api } from '../../api';
 
-// Datos de las variantes de la gorra "CCap" sacados de tu Printful
+// Pre-save: there is no stock yet, so this collects reservations instead of
+// payments. The label writes to each person when the shirts arrive. The Stripe
+// checkout in ../shop stays in place for when a product ships straight away.
 const PRODUCT = {
-  name: "CCAP",
-  price: 18.00,
-  description: "Protege tu cabeza del sistema. Gorra exclusiva de 6 paneles estilo 'Dad Hat'. Bordado frontal con el logo oficial de Criminal Crisis. Talla única, ajustada para la calle. Disponible en 3 colores.",
-  variants: [
-    {
-      id: "5227517429",
-      color: "Black",
-      image: "https://files.cdn.printful.com/files/8c9/8c902501915614630815f09a0dc1425f_preview.png",
-      hex: "#111111"
-    },
-    {
-      id: "5227517430",
-      color: "Stone",
-      image: "https://files.cdn.printful.com/files/bb6/bb69c00ff19fc704c23e386a2159c108_preview.png",
-      hex: "#C0BABC"
-    },
-    {
-      id: "5227517431",
-      color: "White",
-      image: "https://files.cdn.printful.com/files/19b/19bddcff5ac6b7e348a94fc01ba719a0_preview.png",
-      hex: "#FFFFFF"
-    }
-  ]
+  id: 'unpaid-collab-tee',
+  name: 'Unpaid Collab Tee',
+  price: 20,
+  description:
+    'Camiseta blanca con el logo de Criminal Crisis al pecho. This is an unpaid collaboration. ' +
+    'Todavía no tenemos stock: resérvala ahora sin pagar nada y te escribimos en cuanto lleguen para cerrar tu pedido.',
+  image: '/img/merch/unpaid-collab-tee.jpg',
+  sizes: ['S', 'M', 'L', 'XL'],
 };
 
-export default function ShopSection() {
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [selectedVariantId, setSelectedVariantId] = useState(PRODUCT.variants[0].id);
+/** The API answers errors as JSON; show the sentence inside, not the braces. */
+function readError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  try {
+    return JSON.parse(raw).error || raw;
+  } catch {
+    return raw || 'No se pudo guardar la reserva';
+  }
+}
 
-  const selectedVariant = useMemo(() => {
-    return PRODUCT.variants.find(v => v.id === selectedVariantId) || PRODUCT.variants[0];
-  }, [selectedVariantId]);
+const INPUT =
+  'w-full bg-[#1a1a1a] border border-[#333] px-4 py-3 text-white placeholder:text-[#555] focus:outline-none focus:border-white transition-colors';
+
+export default function ShopSection() {
+  const [size, setSize] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [reserved, setReserved] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!size) { setError('Elige una talla'); return; }
+    setSending(true);
+    setError('');
+    try {
+      await api.reserveMerch({ product: PRODUCT.id, size, name, email });
+      setReserved(true);
+    } catch (err) {
+      setError(readError(err));
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <section id="shop" className="py-24 px-6 bg-[#0a0a0a] min-h-screen">
@@ -60,93 +75,104 @@ export default function ShopSection() {
           className="bg-[#111] border border-[#222] overflow-hidden shadow-2xl"
         >
           <div className="flex flex-col md:flex-row">
-            
+
             {/* Columna Izquierda: Imagen */}
-            <div className="md:w-1/2 bg-[#1a1a1a] flex items-center justify-center p-8 md:p-16 relative">
+            <div className="md:w-1/2 bg-[#C9C7C5] flex items-center justify-center relative">
               <div className="absolute top-4 left-4 bg-[#C8302B] text-white text-xs font-black uppercase px-3 py-1 tracking-wider">
-                NEW
+                Pre-Save
               </div>
-              <motion.img 
-                key={selectedVariant.image}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3 }}
-                src={selectedVariant.image} 
-                alt={`${PRODUCT.name} en color ${selectedVariant.color}`}
-                className="w-full max-w-md object-contain drop-shadow-2xl"
+              <img
+                src={PRODUCT.image}
+                alt={`${PRODUCT.name}: camiseta blanca con el logo de Criminal Crisis`}
+                className="w-full h-full object-cover"
               />
             </div>
 
-            {/* Columna Derecha: Info y Pago */}
+            {/* Columna Derecha: Info y Reserva */}
             <div className="md:w-1/2 p-8 md:p-12 lg:p-16 flex flex-col justify-center text-white">
-              
-              {!showCheckout ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <h3 className="text-3xl md:text-4xl font-black mb-2 uppercase tracking-tight">{PRODUCT.name}</h3>
-                  <p className="text-2xl text-[#888] font-light mb-8">${PRODUCT.price.toFixed(2)}</p>
-                  
-                  <p className="text-[#aaa] leading-relaxed mb-10 text-lg">
-                    {PRODUCT.description}
-                  </p>
+              <h3 className="text-3xl md:text-4xl font-black mb-2 uppercase tracking-tight">{PRODUCT.name}</h3>
+              <p className="text-2xl text-[#888] font-light mb-8">{PRODUCT.price} €</p>
 
-                  <div className="mb-10">
+              <p className="text-[#aaa] leading-relaxed mb-10 text-lg">
+                {PRODUCT.description}
+              </p>
+
+              {reserved ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="border border-[#333] bg-[#1a1a1a] p-6"
+                >
+                  <p className="flex items-center gap-2 font-black uppercase tracking-wider mb-2">
+                    <Check size={18} /> Reserva guardada
+                  </p>
+                  <p className="text-[#aaa]">
+                    Talla {size}. Te hemos enviado la confirmación a <span className="text-white">{email}</span> y
+                    te escribiremos ahí en cuanto tengamos las camisetas.
+                  </p>
+                </motion.div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-8">
+                  <div>
                     <p className="text-sm font-bold text-[#666] uppercase tracking-wider mb-4">
-                      Color: <span className="text-white ml-2">{selectedVariant.color}</span>
+                      Talla: <span className="text-white ml-2">{size || '—'}</span>
                     </p>
-                    <div className="flex gap-4">
-                      {PRODUCT.variants.map((variant) => (
+                    <div className="flex gap-3">
+                      {PRODUCT.sizes.map(s => (
                         <button
-                          key={variant.id}
-                          onClick={() => setSelectedVariantId(variant.id)}
-                          className={`w-10 h-10 rounded-full border-2 transition-all ${
-                            selectedVariantId === variant.id 
-                              ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' 
-                              : 'border-transparent hover:border-[#666]'
+                          key={s}
+                          type="button"
+                          onClick={() => { setSize(s); setError(''); }}
+                          aria-pressed={size === s}
+                          className={`w-14 h-12 border-2 font-black transition-colors ${
+                            size === s
+                              ? 'border-white bg-white text-black'
+                              : 'border-[#333] text-white hover:border-[#666]'
                           }`}
-                          style={{ backgroundColor: variant.hex }}
-                          aria-label={`Seleccionar color ${variant.color}`}
-                        />
+                        >
+                          {s}
+                        </button>
                       ))}
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setShowCheckout(true)}
-                    className="w-full bg-white text-black font-black uppercase tracking-widest py-5 px-6 rounded-none hover:bg-gray-200 transition-colors flex items-center justify-center gap-3 text-lg"
-                  >
-                    <ShoppingCart size={20} />
-                    Proceder al Pago
-                  </button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="bg-[#1a1a1a] p-6 md:p-8 rounded-xl border border-[#333]"
-                >
-                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-[#333]">
-                    <div>
-                      <h4 className="font-bold text-lg uppercase tracking-wider text-white">Completar Pedido</h4>
-                      <p className="text-[#888] text-sm">{PRODUCT.name} - {selectedVariant.color}</p>
-                    </div>
-                    <button 
-                      onClick={() => setShowCheckout(false)}
-                      className="text-xs uppercase font-bold text-[#666] hover:text-white transition-colors"
-                    >
-                      Cancelar
-                    </button>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      placeholder="Nombre"
+                      autoComplete="name"
+                      className={INPUT}
+                    />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="Email"
+                      autoComplete="email"
+                      className={INPUT}
+                    />
                   </div>
-                  
-                  <div className="mt-4">
-                    <Checkout items={[{ id: 'ccap', sync_variant_id: parseInt(selectedVariantId), quantity: 1 }]} />
-                  </div>
-                </motion.div>
-              )}
 
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={sending}
+                      className="w-full bg-white text-black font-black uppercase tracking-widest py-5 px-6 rounded-none hover:bg-gray-200 disabled:bg-[#333] disabled:text-[#666] transition-colors flex items-center justify-center gap-3 text-lg"
+                    >
+                      <Bookmark size={20} />
+                      {sending ? 'Guardando...' : 'Pre-Save'}
+                    </button>
+                    <p className="text-xs text-[#666] mt-3 text-center">
+                      No se cobra nada ahora. Solo te avisamos cuando haya stock.
+                    </p>
+                  </div>
+
+                  {error && <p className="text-sm text-[#C8302B]">{error}</p>}
+                </form>
+              )}
             </div>
           </div>
         </motion.div>

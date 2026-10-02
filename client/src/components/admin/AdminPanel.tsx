@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send, Menu, Link2 } from 'lucide-react';
+import { LogOut, Music, Users, Calendar, Home, Plus, Trash2, Edit3, X, Send, Menu, Link2, Shirt } from 'lucide-react';
 import { api } from '../../api';
 import type { Artist, Release, Event } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 import PromoAdmin from './PromoAdmin';
 import LinkPageAdmin from './LinkPageAdmin';
+import MerchAdmin from './MerchAdmin';
 
-type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo' | 'linkpage' | 'linkpage-label';
+type Section = 'home' | 'releases' | 'artists' | 'events' | 'promo' | 'merch' | 'linkpage' | 'linkpage-label';
 
 // ─── Reusable components ──────────────────────────────────────────────────────
 
@@ -699,6 +700,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
     { id: 'artists', label: 'Artists', icon: <Users size={16} /> },
     { id: 'events', label: 'Events', icon: <Calendar size={16} /> },
     { id: 'promo', label: 'Promo Pool', icon: <Send size={16} /> },
+    { id: 'merch', label: 'Merch', icon: <Shirt size={16} /> },
     { id: 'linkpage', label: 'frankydrama', icon: <Link2 size={16} /> },
     { id: 'linkpage-label', label: 'Links del sello', icon: <Link2 size={16} /> },
   ];
@@ -773,6 +775,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         {section === 'artists' && <ArtistsAdmin />}
         {section === 'events' && <EventsAdmin />}
         {section === 'promo' && <PromoAdmin />}
+        {section === 'merch' && <MerchAdmin />}
         {section === 'linkpage' && <LinkPageAdmin slug="frankydrama" title="frankydrama" />}
         {section === 'linkpage-label' && <LinkPageAdmin slug="links" title="Links del sello" />}
       </main>
