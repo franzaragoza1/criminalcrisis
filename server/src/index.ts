@@ -12,6 +12,7 @@ import heroRoutes from './routes/hero.js';
 import linkPageRoutes from './routes/linkPage.js';
 import contactRoutes from './routes/contact.js';
 import promoRoutes, { handleResendWebhook } from './routes/promo.js';
+import merchRoutes from './routes/merch.js';
 import { createPaymentIntent, handleStripeWebhook } from './controllers/paymentController.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,7 @@ app.use('/api/hero', requireDb, heroRoutes);
 app.use('/api/link-page', requireDb, linkPageRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/promo', requireDb, promoRoutes);
+app.use('/api/merch', requireDb, merchRoutes);
 
 /**
  * Keep-alive target as well as a health check. It deliberately does NOT touch

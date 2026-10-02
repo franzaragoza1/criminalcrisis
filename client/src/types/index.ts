@@ -191,3 +191,13 @@ export interface PromoStats {
   }>;
   favourites: Array<{ id: number; title: string; votes: number }>;
 }
+
+export interface MerchReservation {
+  id: number;
+  product: string;
+  size: string;
+  name: string | null;
+  email: string;
+  status: 'reserved' | 'contacted';
+  created_at: string;
+}

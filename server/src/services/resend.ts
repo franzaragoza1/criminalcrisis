@@ -170,6 +170,39 @@ export async function sendPromoEmail(email: PromoEmail): Promise<SendResult> {
   return result;
 }
 
+/**
+ * One-off transactional mail (shop receipts). Deliberately not routed through
+ * the promo batch: no List-Unsubscribe, because this is a reply to something
+ * the recipient just did, not a list send — and it sends from the shop, not
+ * from a person, which is what a receipt is expected to look like.
+ */
+export async function sendTransactionalEmail(email: Omit<PromoEmail, 'unsubscribeUrl'>): Promise<SendResult> {
+  const to = cleanAddress(email.to);
+  const problem = addressProblem(to);
+  if (problem) return { to: email.to, ok: false, error: `Address ${problem}` };
+
+  const from = `${process.env.MERCH_FROM_NAME || 'Criminal Crisis'} <${process.env.MERCH_FROM_EMAIL || 'tienda@criminalcrisis.com'}>`;
+  const res = await fetch(`${RESEND_API}/emails`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      reply_to: replyToAddress(),
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    }),
+  });
+  const body = await res.text();
+  if (!res.ok) return { to, ok: false, error: `${res.status}: ${body.slice(0, 300)}` };
+  try {
+    return { to, ok: true, messageId: JSON.parse(body)?.id };
+  } catch {
+    return { to, ok: true };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Domain setup helpers — used by the admin "email health" screen so the DNS
 // records can be read straight out of the app instead of the Resend dashboard.
