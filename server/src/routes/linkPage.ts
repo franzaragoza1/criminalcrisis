@@ -157,6 +157,88 @@ function parseItems(raw: unknown, max: number): LinkItem[] {
   return out;
 }
 
+/**
+ * Publications: things that happened on a date — a release, an interview, a
+ * video. Kept apart from the links list (profiles, shop), which is permanent
+ * and hand-ordered, because these are neither: they arrive over time and their
+ * order is the order they happened in.
+ *
+ * Every publication carries a date for exactly that reason. The renderer sorts
+ * by it and works out which release is the latest, so a new record goes to the
+ * top with the "Latest release" label by itself and the previous one steps down
+ * to an ordinary release. Before this, that label was text typed onto one
+ * button, and it stayed on the old record when a new one came out.
+ */
+const POST_KINDS = ['release', 'interview', 'video', 'mix', 'press'] as const;
+type PostKind = (typeof POST_KINDS)[number];
+const MAX_POSTS = 50;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export type LinkPost = {
+  kind: PostKind;
+  date: string;
+  title: string;
+  url: string;
+  source?: string;
+  image?: string;
+  layout?: Layout;
+  embed?: string;
+};
+
+export function parsePosts(raw: unknown): LinkPost[] {
+  let list: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      throw new Error('Malformed post list');
+    }
+  }
+  if (!Array.isArray(list)) return [];
+
+  const out: LinkPost[] = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Record<string, unknown>;
+    const title = String(item.title ?? '').trim();
+    const url = String(item.url ?? '').trim();
+    // Same rule as links: a row added and never filled in is dropped, not kept.
+    if (!title || !url) continue;
+    if (!SAFE_URL.test(url)) throw new Error(`Enlace no válido en "${title}": ${url}`);
+
+    const date = String(item.date ?? '').trim();
+    // Order and the Latest-release label both hang off the date, so a missing
+    // one is an error the editor has to see rather than a post that sorts
+    // somewhere arbitrary.
+    if (!ISO_DATE.test(date) || Number.isNaN(Date.parse(date))) {
+      throw new Error(`Falta la fecha en "${title}"`);
+    }
+
+    const rawKind = String(item.kind ?? 'release').trim();
+    const kind: PostKind = (POST_KINDS as readonly string[]).includes(rawKind) ? (rawKind as PostKind) : 'release';
+    const rawLayout = String(item.layout ?? 'classic').trim();
+    const layout: Layout = (LAYOUTS as readonly string[]).includes(rawLayout) ? (rawLayout as Layout) : 'classic';
+
+    const image = String(item.image ?? '').trim();
+    if (image && !/^https?:\/\//i.test(image)) {
+      throw new Error(`La imagen de "${title}" no es válida`);
+    }
+
+    let embed: string | null = null;
+    if (layout === 'embed') embed = resolveEmbed(String(item.embed ?? '').trim() || url);
+
+    const source = String(item.source ?? '').trim();
+    const post: LinkPost = { kind, date, title, url };
+    if (source) post.source = source;
+    if (image) post.image = image;
+    if (layout !== 'classic') post.layout = layout;
+    if (embed) post.embed = embed;
+    out.push(post);
+    if (out.length >= MAX_POSTS) break;
+  }
+  return out;
+}
+
 function serialize(row: Record<string, any>) {
   return {
     slug: row.slug,
@@ -171,6 +253,7 @@ function serialize(row: Record<string, any>) {
     og_image_url: row.og_image_url,
     buttons: parseItems(row.buttons, MAX_BUTTONS),
     footer_links: parseItems(row.footer_links, MAX_FOOTER_LINKS),
+    posts: parsePosts(row.posts),
     updated_at: row.updated_at,
   };
 }
@@ -260,6 +343,9 @@ router.put(
     const buttons = b.buttons === undefined
       ? existing.buttons
       : JSON.stringify(parseItems(b.buttons, MAX_BUTTONS));
+    const posts = b.posts === undefined
+      ? existing.posts
+      : JSON.stringify(parsePosts(b.posts));
     const footerLinks = b.footer_links === undefined
       ? existing.footer_links
       : JSON.stringify(parseItems(b.footer_links, MAX_FOOTER_LINKS));
@@ -283,8 +369,8 @@ router.put(
       `UPDATE link_pages SET
          display_name = $1, tagline = $2, city = $3, alternate_name = $4,
          seo_title = $5, seo_description = $6, og_image_url = $7, photo_url = $8,
-         buttons = $9, footer_links = $10, updated_at = NOW()
-       WHERE slug = $11`,
+         buttons = $9, footer_links = $10, posts = $11, updated_at = NOW()
+       WHERE slug = $12`,
       [
         pick(b.display_name, existing.display_name) || existing.display_name,
         pick(b.tagline, existing.tagline),
@@ -296,6 +382,7 @@ router.put(
         photo,
         buttons,
         footerLinks,
+        posts,
         req.params.slug,
       ]
     );

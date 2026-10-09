@@ -60,6 +60,25 @@ export interface LinkItem {
   embed?: string;
 }
 
+export type LinkPostKind = 'release' | 'interview' | 'video' | 'mix' | 'press';
+
+/**
+ * A dated publication on a link page. Unlike links, these are never ordered by
+ * hand: the page sorts them by date and labels the newest release itself.
+ */
+export interface LinkPost {
+  kind: LinkPostKind;
+  /** YYYY-MM-DD */
+  date: string;
+  title: string;
+  url: string;
+  /** Label for a release, outlet for an interview. */
+  source?: string;
+  image?: string;
+  layout?: LinkLayout;
+  embed?: string;
+}
+
 /** The /frankydrama page, edited whole in one form. Array order is display order. */
 export interface LinkPage {
   slug: string;
@@ -76,6 +95,7 @@ export interface LinkPage {
   og_image_url?: string;
   buttons: LinkItem[];
   footer_links: LinkItem[];
+  posts?: LinkPost[];
   updated_at?: string;
 }
 
