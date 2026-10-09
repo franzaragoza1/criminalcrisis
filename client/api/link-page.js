@@ -197,6 +197,81 @@ a { color: inherit; text-decoration: none; }
   text-align: center;
 }
 
+/* ── Publications ──
+   Content, not navigation, so titles are set in sentence case: an interview
+   headline in spaced capitals reads as shouting. The uppercase stays with the
+   links below, which keeps the two groups visibly different things. */
+.posts { display: flex; flex-direction: column; gap: 0.625rem; margin-bottom: 2rem; }
+.post__meta {
+  display: block;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.post__title {
+  display: block;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+.card__body .post__title, .embed__title .post__title, .btn .post__title { margin-top: 0.3rem; }
+
+/* Featured: the image fitted inside a blurred copy of itself. */
+.card__media {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  padding: 6% 0;
+  overflow: hidden;
+  background: #111111;
+  border-bottom: 1px solid #111111;
+}
+.card__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.25);
+  filter: blur(28px) saturate(1.15) brightness(0.75);
+}
+.card__fg {
+  position: relative;
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* Normal: a compact row with a square thumbnail. */
+.post {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.6rem;
+  border: 1px solid #111111;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.post:hover, .post:focus-visible { background: #111111; color: #FAFAFA; }
+.post__thumb {
+  display: block;
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: cover;
+  background: #E8E8E8;
+}
+.post__body { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; text-align: left; }
+.post .post__title { font-size: 0.9375rem; margin: 0; }
+.post__date { font-size: 0.75rem; opacity: 0.55; }
+
 /* Inline players. Heights are reserved per provider so nothing below shifts
    when the iframe finally loads. */
 .embed { border: 1px solid #111111; }
@@ -299,6 +374,141 @@ function embedClass(src) {
   }
 }
 
+// ── Publications ───────────────────────────────────────────────────────────
+
+const KIND_LABEL = {
+  release: 'Release',
+  interview: 'Interview',
+  video: 'Video',
+  mix: 'Mix',
+  press: 'Press',
+};
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "2026-10-06" → "Oct 2026". Fixed English months: the page is in English and
+ *  a locale-dependent formatter would print whatever the server's locale is. */
+function monthYear(iso) {
+  const [y, m] = String(iso).split('-');
+  return MONTHS[Number(m) - 1] ? MONTHS[Number(m) - 1] + ' ' + y : '';
+}
+
+/** "2026-10-24" → "24 Oct", for a release that is not out yet. */
+function dayMonth(iso) {
+  const [, m, d] = String(iso).split('-');
+  return MONTHS[Number(m) - 1] ? Number(d) + ' ' + MONTHS[Number(m) - 1] : '';
+}
+
+/**
+ * The order is decided here, not by the editor. The newest release that is
+ * already out goes first and is the one labelled "Latest release"; everything
+ * else follows newest-first. So adding a record with its date is the whole job:
+ * it takes the top slot and the label, and the previous one steps down on its
+ * own — the label no longer stays behind on an old record because nobody
+ * remembered to move it.
+ *
+ * A release dated in the future is never called "latest"; it gets its release
+ * day instead, so a pre-order link cannot claim to be out.
+ */
+function orderPosts(posts) {
+  const today = new Date().toISOString().slice(0, 10);
+  const valid = (posts || []).filter(p => p && p.title && safeUrl(p.url) && /^\d{4}-\d{2}-\d{2}$/.test(p.date));
+  const sorted = [...valid].sort((a, b) => b.date.localeCompare(a.date));
+  const latest = sorted.find(p => p.kind === 'release' && p.date <= today);
+  const rest = sorted.filter(p => p !== latest);
+  return (latest ? [{ ...latest, isLatest: true }, ...rest] : rest).map(p => ({
+    ...p,
+    upcoming: p.kind === 'release' && p.date > today,
+  }));
+}
+
+/**
+ * The small line above a publication: what it is, where, and when.
+ *
+ * withDate is off for the compact rows: next to a thumbnail a phone has about
+ * 230px for this line, and "Interview · Beatportal · Oct 2026" broke between
+ * "Oct" and "2026". Those rows show the date under the title instead.
+ */
+function postMeta(p, withDate = true) {
+  if (p.isLatest) return ['Latest release', p.source].filter(Boolean).join(' · ');
+  if (p.upcoming) return ['Out ' + dayMonth(p.date), p.source].filter(Boolean).join(' · ');
+  return [KIND_LABEL[p.kind] || 'Release', p.source, withDate ? monthYear(p.date) : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * A thumbnail is shown at 72px; sending the 700–1200px original for it would
+ * make the list the heaviest thing on the page. Bandcamp and Cloudinary both
+ * size images by URL, so ask them for a small one. Anything else is left as is.
+ */
+function thumbUrl(url) {
+  if (/^https:\/\/f4\.bcbits\.com\/img\/[a-z0-9]+_\d+\.jpg$/i.test(url)) {
+    return url.replace(/_\d+\.jpg$/i, '_9.jpg');
+  }
+  if (/^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(url)) {
+    return /\/upload\/[^/]*\bw_\d+/.test(url)
+      ? url.replace(/\bw_\d+/, 'w_240')
+      : url.replace('/upload/', '/upload/f_auto,q_auto,c_fill,w_240,h_240/');
+  }
+  return url;
+}
+
+function isHttp(url) {
+  return /^https?:\/\//i.test(String(url || ''));
+}
+
+function renderPost(p) {
+  const meta = '<span class="post__meta">' + esc(postMeta(p)) + '</span>';
+  const title = '<span class="post__title">' + esc(p.title) + '</span>';
+  const cls = p.layout === 'embed' && p.embed ? embedClass(p.embed) : null;
+
+  if (cls) {
+    return [
+      '      <div class="embed ' + cls + '">',
+      // As with links: the outbound anchor stays above the player, because a
+      // crawler does not read an iframe as a link.
+      '        <a class="embed__title" href="' + esc(p.url) + '"' + linkAttrs(p.url) + '>' + meta + title + '</a>',
+      '        <iframe src="' + esc(p.embed) + '" title="' + esc(p.title) + '" loading="lazy"' +
+        ' allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"' +
+        ' referrerpolicy="strict-origin-when-cross-origin"></iframe>',
+      '      </div>',
+    ].join('\n');
+  }
+
+  if (p.layout === 'featured' && isHttp(p.image)) {
+    // Two copies of the same image (one request — the browser reuses it): a
+    // blurred one filling the frame and a sharp one fitted inside it. A square
+    // sleeve then shows whole, centred on its own colours, instead of being
+    // cropped to 16:9 — and a 16:9 photo simply fills the frame.
+    return [
+      '      <a class="card" href="' + esc(p.url) + '"' + linkAttrs(p.url) + '>',
+      '        <span class="card__media">',
+      '          <img class="card__bg" src="' + esc(p.image) + '" alt="" aria-hidden="true" loading="lazy" decoding="async">',
+      '          <img class="card__fg" src="' + esc(p.image) + '" alt="" loading="lazy" decoding="async">',
+      '        </span>',
+      '        <span class="card__body">' + meta + title + '</span>',
+      '      </a>',
+    ].join('\n');
+  }
+
+  if (p.layout === 'featured') {
+    return '      <a class="btn btn--lead" href="' + esc(p.url) + '"' + linkAttrs(p.url) + '>' + meta + title + '</a>';
+  }
+
+  const thumb = isHttp(p.image)
+    ? '<img class="post__thumb" src="' + esc(thumbUrl(p.image)) + '" alt="" loading="lazy" decoding="async">'
+    : '<span class="post__thumb" aria-hidden="true"></span>';
+  const rowMeta = '<span class="post__meta">' + esc(postMeta(p, false)) + '</span>';
+  const date = p.isLatest || p.upcoming ? '' : '<span class="post__date">' + esc(monthYear(p.date)) + '</span>';
+  return [
+    '      <a class="post" href="' + esc(p.url) + '"' + linkAttrs(p.url) + '>',
+    '        ' + thumb,
+    '        <span class="post__body">' + rowMeta + title + date + '</span>',
+    '      </a>',
+  ].join('\n');
+}
+
 /**
  * One link, in whichever of the three shapes it was given.
  *
@@ -373,6 +583,8 @@ function renderPage(page, canonical) {
   // elsewhere" — our own pages are not elsewhere, and the label's page links to
   // several of them, which would otherwise fill its sameAs with internal URLs
   // and tell a search engine nothing.
+  const posts = orderPosts(page.posts);
+
   const sameAs = [...new Set(
     [...buttons, ...footer].map(b => b.url).filter(isExternalProfile)
   )];
@@ -398,7 +610,35 @@ function renderPage(page, canonical) {
     ...(sameAs.length ? { sameAs } : {}),
   };
 
+  // Releases and press coverage, described to search engines as what they are.
+  // Everything here comes from the publication's own fields; nothing is added.
+  // MusicAlbum is the type schema.org uses for singles and EPs as well, and
+  // "album" is only defined on MusicGroup, so the label's page skips it.
+  const releases = posts.filter(p => p.kind === 'release' && !p.upcoming);
+  if (schemaType === 'MusicGroup' && releases.length) {
+    jsonLd.album = releases.map(p => ({
+      '@type': 'MusicAlbum',
+      name: p.title,
+      url: p.url,
+      datePublished: p.date,
+      ...(isHttp(p.image) ? { image: p.image } : {}),
+      ...(p.source ? { recordLabel: { '@type': 'Organization', name: p.source } } : {}),
+    }));
+  }
+  const coverage = posts.filter(p => p.kind === 'interview' || p.kind === 'press');
+  if (coverage.length) {
+    jsonLd.subjectOf = coverage.map(p => ({
+      '@type': 'Article',
+      headline: p.title,
+      url: p.url,
+      datePublished: p.date,
+      ...(isHttp(p.image) ? { image: p.image } : {}),
+      ...(p.source ? { publisher: { '@type': 'Organization', name: p.source } } : {}),
+    }));
+  }
+
   const buttonsHtml = buttons.map(renderLink).join('\n');
+  const postsHtml = posts.map(renderPost).join('\n');
 
   const footerHtml = footer
     .map(b => '      <a href="' + esc(b.url) + '"' + linkAttrs(b.url) + '>' + esc(b.label) + '</a>')
@@ -441,6 +681,9 @@ function renderPage(page, canonical) {
     page.city ? '      <p class="city">' + esc(page.city) + '</p>' : null,
     '    </header>',
     '',
+    posts.length ? '    <section class="posts" aria-label="Latest from ' + esc(name) + '">' : null,
+    posts.length ? postsHtml : null,
+    posts.length ? '    </section>' : null,
     '    <nav class="links" aria-label="Listen to ' + esc(name) + '">',
     buttonsHtml,
     '    </nav>',

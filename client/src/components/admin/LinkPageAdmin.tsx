@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, ExternalLink, Plus, X } from 'lucide-react';
 import { api } from '../../api';
-import type { LinkItem, LinkLayout, LinkPage } from '../../types';
+import type { LinkItem, LinkLayout, LinkPage, LinkPost, LinkPostKind } from '../../types';
 import { INPUT_CLS, LABEL_CLS } from './adminStyles';
 
 
@@ -264,6 +264,158 @@ function LinkListEditor({
   );
 }
 
+const POST_KINDS: { value: LinkPostKind; label: string }[] = [
+  { value: 'release', label: 'Lanzamiento' },
+  { value: 'interview', label: 'Entrevista' },
+  { value: 'video', label: 'Vídeo' },
+  { value: 'mix', label: 'Mix' },
+  { value: 'press', label: 'Prensa' },
+];
+
+const POST_LAYOUTS: { value: LinkLayout; label: string; hint: string }[] = [
+  { value: 'classic', label: 'Normal', hint: 'Fila con miniatura. Va bien para entrevistas y discos anteriores.' },
+  { value: 'featured', label: 'Destacada', hint: 'Tarjeta grande con la imagen. Para lo que quieres que vean primero.' },
+  {
+    value: 'embed',
+    label: 'Reproductor',
+    hint: 'Suena aquí mismo. Bandcamp: pega su código embed. SoundCloud, Spotify y YouTube no necesitan nada.',
+  },
+];
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Index of the post the public page will label "Latest release": the newest
+ * release already out. Shown in the form too, so the editor sees the label move
+ * the moment a newer release is dated, instead of having to trust that it will.
+ */
+function latestReleaseIndex(posts: LinkPost[]): number {
+  const today = todayIso();
+  let best = -1;
+  posts.forEach((p, i) => {
+    if (p.kind !== 'release' || !p.date || p.date > today) return;
+    if (best === -1 || p.date > posts[best].date) best = i;
+  });
+  return best;
+}
+
+/**
+ * Publications have no arrows: their order on the page is their date. New ones
+ * go in at the top of the form because that is where they will appear.
+ */
+function PostListEditor({ posts, onChange }: { posts: LinkPost[]; onChange: (posts: LinkPost[]) => void }) {
+  const update = <K extends keyof LinkPost>(i: number, field: K, value: LinkPost[K]) => {
+    const next = [...posts];
+    next[i] = { ...next[i], [field]: value };
+    onChange(next);
+  };
+  const latest = latestReleaseIndex(posts);
+
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => onChange([{ kind: 'release', date: todayIso(), title: '', url: '', layout: 'classic' }, ...posts])}
+        className="flex items-center gap-1.5 text-xs text-[#888] hover:text-[#111] transition-colors cursor-pointer"
+      >
+        <Plus size={12} /> Añadir publicación
+      </button>
+
+      {posts.map((p, i) => {
+        const layout = p.layout ?? 'classic';
+        return (
+          <div key={i} className="border border-[#E8E8E8] bg-white p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={p.kind}
+                    onChange={e => update(i, 'kind', e.target.value as LinkPostKind)}
+                    className="border border-[#E0E0E0] bg-white px-2 py-1.5 text-sm focus:outline-none focus:border-[#111] cursor-pointer"
+                  >
+                    {POST_KINDS.map(k => (
+                      <option key={k.value} value={k.value}>{k.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={p.date}
+                    onChange={e => update(i, 'date', e.target.value)}
+                    className="border border-[#E0E0E0] bg-white px-2 py-1 text-sm focus:outline-none focus:border-[#111]"
+                  />
+                  {i === latest && (
+                    <span className="bg-[#111] text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
+                      Latest release
+                    </span>
+                  )}
+                </div>
+                <input
+                  value={p.title}
+                  onChange={e => update(i, 'title', e.target.value)}
+                  placeholder="Título — p. ej. Lefta FM"
+                  className={INPUT_CLS}
+                />
+                <input
+                  value={p.url}
+                  onChange={e => update(i, 'url', e.target.value)}
+                  placeholder="Enlace — https://..."
+                  className={`${INPUT_CLS} font-mono text-xs`}
+                />
+                <input
+                  value={p.source ?? ''}
+                  onChange={e => update(i, 'source', e.target.value)}
+                  placeholder="Sello o medio, opcional — p. ej. Faux Poly, Beatportal"
+                  className={INPUT_CLS}
+                />
+
+                <div className="pt-1">
+                  <div className="flex flex-wrap gap-1">
+                    {POST_LAYOUTS.map(l => (
+                      <button
+                        key={l.value}
+                        type="button"
+                        onClick={() => update(i, 'layout', l.value)}
+                        className={`px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                          layout === l.value
+                            ? 'bg-[#111] text-white border-[#111]'
+                            : 'border-[#E0E0E0] text-[#888] hover:border-[#111] hover:text-[#111]'
+                        }`}
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-[#999] mt-1">{POST_LAYOUTS.find(l => l.value === layout)?.hint}</p>
+                </div>
+
+                {layout === 'embed' ? (
+                  <input
+                    value={p.embed ?? ''}
+                    onChange={e => update(i, 'embed', e.target.value)}
+                    placeholder="Vacío = usa el enlace de arriba. Bandcamp: pega su código embed."
+                    className={`${INPUT_CLS} font-mono text-xs`}
+                  />
+                ) : (
+                  <ImagePicker value={p.image} onChange={url => update(i, 'image', url)} />
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onChange(posts.filter((_, idx) => idx !== i))}
+                aria-label="Borrar"
+                className="text-[#888] hover:text-red-500 transition-colors cursor-pointer flex-shrink-0 pt-1"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Fieldset({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="mb-10">
@@ -314,6 +466,7 @@ export default function LinkPageAdmin({ slug, title }: { slug: string; title: st
     fd.append('seo_description', page.seo_description ?? '');
     fd.append('buttons', JSON.stringify(page.buttons));
     fd.append('footer_links', JSON.stringify(page.footer_links));
+    fd.append('posts', JSON.stringify(page.posts ?? []));
     if (ogImage) fd.append('og_image', ogImage);
     if (photo) fd.append('photo', photo);
 
@@ -403,8 +556,15 @@ export default function LinkPageAdmin({ slug, title }: { slug: string; title: st
         </Fieldset>
 
         <Fieldset
-          title={`Botones (${page.buttons.length})`}
-          hint="En el orden en que aparecen. Cada uno puede ser normal, destacado o un reproductor que suena aquí mismo."
+          title={`Publicaciones (${(page.posts ?? []).length})`}
+          hint="Lanzamientos, entrevistas, vídeos… Se ordenan solas por fecha. El lanzamiento más reciente sale primero con la etiqueta Latest release, y cuando añadas uno nuevo la etiqueta pasa a él sola. No hay que mover nada."
+        >
+          <PostListEditor posts={page.posts ?? []} onChange={posts => set('posts', posts)} />
+        </Fieldset>
+
+        <Fieldset
+          title={`Enlaces (${page.buttons.length})`}
+          hint="Tus perfiles y enlaces fijos, en el orden en que aparecen debajo de las publicaciones."
         >
           <LinkListEditor
             items={page.buttons}

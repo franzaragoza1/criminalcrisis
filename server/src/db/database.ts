@@ -107,6 +107,9 @@ export async function initDb() {
       og_image_url TEXT,
       buttons TEXT DEFAULT '[]',
       footer_links TEXT DEFAULT '[]',
+      -- Dated publications (releases, interviews…), ordered by date at render
+      -- time rather than by hand. See parsePosts in routes/linkPage.ts.
+      posts TEXT DEFAULT '[]',
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -262,6 +265,7 @@ export async function initDb() {
   // Safe migrations — add new columns if they don't exist yet
   await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS photo_url TEXT`);
   await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS schema_type TEXT DEFAULT 'MusicGroup'`);
+  await pool.query(`ALTER TABLE link_pages ADD COLUMN IF NOT EXISTS posts TEXT DEFAULT '[]'`);
   await pool.query(`ALTER TABLE releases ADD COLUMN IF NOT EXISTS catalog_number TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT`);
   await pool.query(`ALTER TABLE promo_tracks ADD COLUMN IF NOT EXISTS mp3_public_id TEXT`);
@@ -400,7 +404,6 @@ async function seedLinkPages() {
         'frankydrama is the alias of Fran Zaragoza, a Madrid-based producer and DJ working in leftfield bass, broken rhythms and mutant 4/4 built for club use, heavily influenced by UK soundsystem culture. Founder of Criminal Crisis.',
       og_image_url: 'https://f4.bcbits.com/img/0037962526_23.jpg',
       buttons: [
-        { label: 'Club Tools Vol. 1', url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', note: 'Latest release', layout: 'featured' },
         { label: 'SoundCloud', url: 'https://soundcloud.com/frankydrama' },
         { label: 'Bandcamp', url: 'https://frankydrama.bandcamp.com/' },
         { label: 'Resident Advisor', url: 'https://es.ra.co/dj/frankydrama' },
@@ -412,6 +415,27 @@ async function seedLinkPages() {
         { label: 'Criminal Crisis', url: 'https://criminalcrisis.com' },
         { label: 'Vinyl — Strictly Human / Pseudo Stories', url: 'https://elasticstage.com/frankydrama/releases/strictly-human-pseudo-stories-album' },
         { label: 'fran@criminalcrisis.com', url: 'mailto:fran@criminalcrisis.com' },
+      ],
+      // Dates, labels and artwork are taken from each release's own Bandcamp
+      // page and from the article itself, not entered by hand.
+      posts: [
+        {
+          kind: 'release', date: '2026-10-02', title: 'Lefta FM', source: 'Faux Poly',
+          url: 'https://fauxpoly.lnk.to/LeftaFM', layout: 'featured',
+          image: 'https://f4.bcbits.com/img/a0540982683_16.jpg',
+        },
+        {
+          kind: 'interview', date: '2026-10-06', source: 'Beatportal',
+          title: 'frankydrama on breaking the rules of rhythm, chasing groove and finding a new approach to production',
+          url: 'https://www.beatportal.com/articles/1666289-frankydrama-on-breaking-the-rules-of-rhythm-chasing-groove-and-finding-a-new-approach-to-production-faux-poly-interviews',
+          image: 'https://assets.beatportal.com/images/transforms/content-item/_1024x512_crop_center-center_none/42580BBB_1426_4C17_A864_CE71C0E40016-Cropped_16x9.png',
+        },
+        {
+          kind: 'release', date: '2026-08-21', title: 'Club Tools Vol. 1', source: 'Criminal Crisis',
+          url: 'https://frankydrama.bandcamp.com/album/club-tools-vol-1', layout: 'embed',
+          image: 'https://f4.bcbits.com/img/a1846790495_16.jpg',
+          embed: 'https://bandcamp.com/EmbeddedPlayer/v=2/album=2116605267/size=large/bgcol=ffffff/linkcol=333333/tracklist=false/artwork=small/transparent=true/',
+        },
       ],
     },
     // The label's own link-in-bio page. Every value below is taken from
@@ -450,13 +474,14 @@ async function seedLinkPages() {
     await pool.query(
       `INSERT INTO link_pages
          (slug, display_name, tagline, city, alternate_name, schema_type, photo_url,
-          seo_title, seo_description, og_image_url, buttons, footer_links)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          seo_title, seo_description, og_image_url, buttons, footer_links, posts)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (slug) DO NOTHING`,
       [
         p.slug, p.display_name, p.tagline, p.city, p.alternate_name, p.schema_type,
         p.photo_url, p.seo_title, p.seo_description, p.og_image_url,
         JSON.stringify(p.buttons), JSON.stringify(p.footer_links),
+        JSON.stringify((p as { posts?: unknown[] }).posts ?? []),
       ]
     );
   }
